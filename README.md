@@ -15,7 +15,7 @@ AR.IO Bundler is a comprehensive platform that packages [ANS-104](https://github
 │  ┌──────────────┐      ┌──────────────┐      ┌──────────────┐  │
 │  │   Payment    │◄─────┤    Upload    │◄─────┤   AR.IO      │  │
 │  │   Service    │ JWT  │   Service    │ Opt. │   Gateway    │  │
-│  │  (Port 4000) │ Auth │  (Port 3001) │ Cache│  (Port 3000) │  │
+│  │  (Port 4001) │ Auth │  (Port 3001) │ Cache│ (Port 4000)  │  │
 │  └──────────────┘      └──────────────┘      └──────────────┘  │
 │                                                                  │
 │  Infrastructure: PostgreSQL • Redis • MinIO • BullMQ • PM2      │
@@ -29,33 +29,53 @@ AR.IO Bundler is a comprehensive platform that packages [ANS-104](https://github
 - Node.js 18+ (via [nvm](https://github.com/nvm-sh/nvm))
 - Yarn 3+
 - Docker & Docker Compose
-- PM2 (for production)
+- PM2 (optional, for production)
 
 ### Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/ar-io/ar-io-bundler.git
+git clone https://github.com/vilenarios/ar-io-bundler.git
 cd ar-io-bundler
 
-# Run setup script
-./scripts/setup.sh
+# Install dependencies
+yarn install
 
-# Edit configuration
-cp .env.sample .env
-nano .env
+# Copy environment template
+cp packages/upload-service/.env.sample packages/upload-service/.env
+
+# Edit configuration (set TURBO_JWK_FILE, PRIVATE_ROUTE_SECRET, etc.)
+nano packages/upload-service/.env
 
 # Add your Arweave wallet
 cp /path/to/your/wallet.json ./wallet.json
 
-# Start infrastructure
-yarn infra:up
+# Start infrastructure (PostgreSQL, Redis, MinIO)
+docker compose up -d
 
-# Start services (development)
-yarn dev
+# Run database migrations
+yarn db:migrate
 
-# Or start with PM2 (production)
-yarn pm2:start
+# Build services
+yarn build
+
+# Start with PM2 (production)
+pm2 start infrastructure/pm2/ecosystem.config.js
+
+# Or start in development mode
+yarn dev:payment    # Terminal 1
+yarn dev:upload     # Terminal 2
+```
+
+### Verify Installation
+
+```bash
+# Check services are running
+curl http://localhost:3001/v1/info  # Upload service
+curl http://localhost:4001/v1/info  # Payment service
+
+# View queue dashboard
+open http://localhost:3002/admin/queues
 ```
 
 ## Services
@@ -65,31 +85,30 @@ yarn pm2:start
 Handles payment processing, credit management, and blockchain payment gateway integrations.
 
 **Features:**
-- Cryptocurrency payment processing (Arweave, Ethereum, Solana, Matic, KYVE, Base-ETH, ARIO)
+- Cryptocurrency payment processing (Arweave, Ethereum, Solana, Matic, KYVE, Base-ETH)
 - Stripe payment integration
 - User balance and credit management
 - ArNS (Arweave Name System) purchase handling
 - Promotional code support
+- Delegated payment approvals
 
-**Port:** 4000
+**Port:** 4001
 
 ### Upload Service (`packages/upload-service`)
 
 Accepts data item uploads and manages asynchronous fulfillment of data delivery to Arweave.
 
 **Features:**
-- Single and multipart data item uploads
+- Single and multipart data item uploads (up to 10GB)
 - Asynchronous job processing via BullMQ (11 queues)
+- ANS-104 bundle creation and posting
 - MinIO object storage integration
-- PostgreSQL offset storage
-- PM2-managed workers
-- AR.IO Gateway optimistic caching
+- PostgreSQL offset storage for data retrieval
+- PM2-managed workers for background processing
+- AR.IO Gateway optimistic caching (optical posting)
+- Nested bundle (BDI) unbundling
 
 **Port:** 3001
-
-### Shared Package (`packages/shared`)
-
-Common code shared between services including types, utilities, and middleware.
 
 ## Project Structure
 
@@ -97,19 +116,18 @@ Common code shared between services including types, utilities, and middleware.
 ar-io-bundler/
 ├── packages/              # Service packages
 │   ├── payment-service/   # Payment processing service
-│   ├── upload-service/    # Upload and bundling service
-│   └── shared/            # Shared code and utilities
-├── infrastructure/        # Infrastructure as code
-│   ├── docker/            # Dockerfiles
-│   ├── postgres/          # Database configs
-│   ├── redis/             # Redis configs
-│   ├── minio/             # MinIO configs
-│   ├── nginx/             # Reverse proxy configs
+│   └── upload-service/    # Upload and bundling service
+├── infrastructure/        # Infrastructure configuration
+│   ├── postgres/          # Database initialization
 │   └── pm2/               # PM2 process configs
 ├── scripts/               # Automation scripts
 ├── docs/                  # Documentation
-├── tests/                 # End-to-end integration tests
-└── deployment/            # Deployment configurations
+│   ├── architecture/      # System architecture
+│   ├── setup/             # Installation guides
+│   ├── operations/        # Production deployment
+│   ├── api/               # API reference
+│   └── migration/         # AWS migration history
+└── docker-compose.yml     # Infrastructure definition
 ```
 
 ## Common Commands
@@ -128,29 +146,26 @@ yarn build:upload           # Build upload service
 # Testing
 yarn test                   # Run all tests
 yarn test:unit              # Run unit tests only
-yarn test:e2e               # Run end-to-end tests
 yarn test:payment           # Test payment service
 yarn test:upload            # Test upload service
 
 # Database
-yarn db:up                  # Start database infrastructure
-yarn db:down                # Stop database infrastructure
 yarn db:migrate             # Run all migrations
 yarn db:migrate:payment     # Migrate payment service DB
 yarn db:migrate:upload      # Migrate upload service DB
 
 # Infrastructure
-yarn infra:up               # Start all infrastructure
-yarn infra:down             # Stop all infrastructure
-yarn infra:restart          # Restart infrastructure
-yarn infra:logs             # View infrastructure logs
+docker compose up -d        # Start all infrastructure
+docker compose down         # Stop all infrastructure
+docker compose restart      # Restart infrastructure
+docker compose logs -f      # View infrastructure logs
 
 # Production (PM2)
-yarn pm2:start              # Start all services with PM2
-yarn pm2:stop               # Stop all PM2 processes
-yarn pm2:restart            # Restart all PM2 processes
-yarn pm2:logs               # View PM2 logs
-yarn pm2:monit              # Monitor PM2 processes
+pm2 start infrastructure/pm2/ecosystem.config.js  # Start all services
+pm2 stop all                # Stop all PM2 processes
+pm2 restart all             # Restart all PM2 processes
+pm2 logs                    # View PM2 logs
+pm2 monit                   # Monitor PM2 processes
 
 # Code Quality
 yarn lint                   # Lint all packages
@@ -166,75 +181,123 @@ The platform uses the following infrastructure components:
 
 | Component | Port | Purpose |
 |-----------|------|---------|
-| PostgreSQL | 5432 | Relational database |
+| PostgreSQL | 5432 | Relational database (2 databases) |
 | Redis (cache) | 6379 | Application caching |
 | Redis (queues) | 6381 | BullMQ job queues |
-| MinIO | 9000-9001 | S3-compatible object storage |
-| Payment Service | 4000 | Payment API |
+| MinIO API | 9000 | S3-compatible object storage |
+| MinIO Console | 9001 | Web UI for MinIO |
 | Upload Service | 3001 | Upload API |
 | Bull Board | 3002 | Queue monitoring dashboard |
-| AR.IO Gateway | 3000 | Gateway (optional) |
+| Payment Service | 4001 | Payment API |
 
 ## Documentation
 
-- **[Administrator Guide](./ADMINISTRATOR_GUIDE.md)** - Complete setup and deployment guide
-- **[E2E Testing Guide](./docs/setup/e2e-testing.md)** - Testing documentation
-- **[Architecture Overview](./docs/architecture/overview.md)** - System architecture
-- **[API Documentation](./docs/api/)** - Service API references
-- **[Troubleshooting](./docs/operations/troubleshooting.md)** - Common issues and solutions
+- 📐 **[Architecture](./docs/architecture/ARCHITECTURE.md)** - Complete system architecture
+- 🚀 **[Setup Guide](./docs/setup/)** - Installation and configuration
+- ⚙️ **[Operations](./docs/operations/)** - Production deployment and monitoring
+- 🔌 **[API Reference](./docs/api/)** - Service API documentation
+- 🔄 **[Migration History](./docs/migration/)** - AWS to open-source migration
 
 ## Development Workflow
 
 1. **Make changes** in the appropriate package
-2. **Run tests**: `yarn test:unit` or `yarn test:integration`
+2. **Run tests**: `yarn test:unit`
 3. **Check types**: `yarn typecheck`
-4. **Lint**: `yarn lint:fix`
-5. **Format**: `yarn format`
-6. **Test E2E**: `yarn test:e2e`
-7. **Commit** (husky will run pre-commit hooks)
-
-## Production Deployment
-
-See the [Administrator Guide](./ADMINISTRATOR_GUIDE.md) for complete production deployment instructions including:
-
-- Security hardening
-- Nginx reverse proxy setup
-- SSL/TLS configuration
-- Firewall configuration
-- Backup procedures
-- Monitoring setup
+4. **Lint & format**: `yarn lint:fix && yarn format`
+5. **Commit** (husky will run pre-commit hooks)
 
 ## Environment Configuration
 
-Copy `.env.sample` to `.env` and configure:
+Key environment variables to configure in `.env`:
 
 ```bash
 # Required
-PRIVATE_ROUTE_SECRET=         # Inter-service auth secret
-DB_PASSWORD=                  # PostgreSQL password
-STRIPE_SECRET_KEY=            # Stripe API key (for payments)
-TURBO_JWK_FILE=./wallet.json  # Arweave wallet for bundle signing
+PRIVATE_ROUTE_SECRET=           # Generate with: openssl rand -hex 32
+DB_PASSWORD=postgres            # PostgreSQL password
+TURBO_JWK_FILE=./wallet.json    # Arweave wallet for bundle signing
+
+# Stripe (for credit card payments)
+STRIPE_SECRET_KEY=              # Stripe API key
+STRIPE_WEBHOOK_SECRET=          # Stripe webhook secret
+
+# AR.IO Gateway Integration
+OPTICAL_BRIDGING_ENABLED=true   # Enable optimistic caching
+OPTICAL_BRIDGE_URL=             # AR.IO Gateway URL
+AR_IO_ADMIN_KEY=                # AR.IO admin key
 
 # Optional
-OPTICAL_BRIDGING_ENABLED=true     # Enable AR.IO Gateway integration
-AR_IO_ADMIN_KEY=                  # AR.IO admin key
-ALLOW_LISTED_ADDRESSES=           # Free upload addresses
+ALLOW_LISTED_ADDRESSES=         # Comma-separated addresses for free uploads
 ```
 
-## Contributing
+See [Configuration Reference](./docs/architecture/ARCHITECTURE.md#configuration) for all environment variables.
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for contribution guidelines.
+## Key Features
+
+- ✅ **ANS-104 Bundling**: Standards-compliant data item bundling
+- ✅ **Multi-signature Support**: Arweave, Ethereum, Solana, and more
+- ✅ **Multipart Uploads**: Support for large files (up to 10GB)
+- ✅ **Crypto Payments**: Multiple blockchain payment options
+- ✅ **Stripe Integration**: Credit card payment processing
+- ✅ **ArNS Purchases**: Arweave Name System integration
+- ✅ **Optimistic Caching**: AR.IO Gateway optical posting
+- ✅ **Open Source Stack**: No cloud vendor lock-in
+- ✅ **Self-hosted**: Full control over infrastructure
+
+## Production Deployment
+
+For production deployment, see:
+- [Operations Guide](./docs/operations/) - Deployment, monitoring, backups
+- [Architecture Documentation](./docs/architecture/ARCHITECTURE.md#deployment) - Detailed deployment instructions
+
+Key considerations:
+- Configure SSL/TLS with reverse proxy (nginx/Caddy)
+- Set up database backups
+- Configure monitoring and alerting
+- Use strong secrets and credentials
+- Follow security best practices
+
+## Testing
+
+```bash
+# Unit tests (fast)
+yarn test:unit
+
+# Integration tests (requires infrastructure)
+yarn workspace @ar-io-bundler/upload-service test:integration:local
+yarn workspace @ar-io-bundler/payment-service test:integration:local
+```
+
+**Test Coverage**:
+- Payment Service: 143 unit tests ✅
+- Upload Service: 183 unit tests ✅
+- Total: 326/326 passing
+
+## Technology Stack
+
+- **Runtime**: Node.js 18+, TypeScript
+- **Package Manager**: Yarn 3.6.0 (workspaces)
+- **Web Framework**: Koa 3.0
+- **Database**: PostgreSQL 16.1
+- **Cache**: Redis 7.2
+- **Object Storage**: MinIO
+- **Job Queue**: BullMQ
+- **Process Manager**: PM2
+- **ORM**: Knex.js
+- **Testing**: Mocha, Chai
+- **Observability**: Winston, OpenTelemetry, Prometheus
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see [LICENSE-Apache-2.0.md](./LICENSE-Apache-2.0.md) for details.
+This project is licensed under the GNU Affero General Public License v3.0 - see [LICENSE](./LICENSE) for details.
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/ar-io/ar-io-bundler/issues)
+- **GitHub**: https://github.com/vilenarios/ar-io-bundler
+- **Issues**: https://github.com/vilenarios/ar-io-bundler/issues
 - **Documentation**: [docs/](./docs/)
-- **Administrator Guide**: [ADMINISTRATOR_GUIDE.md](./ADMINISTRATOR_GUIDE.md)
+- **Arweave**: https://docs.arweave.org
+- **AR.IO**: https://docs.ar.io
 
 ---
 
-**Maintained by the AR.IO team**
+**Built with ❤️ for the Arweave ecosystem**
