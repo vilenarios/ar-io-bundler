@@ -1,0 +1,189 @@
+services:
+  upload-service:
+    build:
+      context: .
+      args:
+        NODE_VERSION: ${NODE_VERSION:-18.17.0}
+        NODE_VERSION_SHORT: ${NODE_VERSION_SHORT:-18}
+    environment:
+      NODE_ENV: ${NODE_ENV:-local}
+      DB_HOST: upload-service-pg
+      DB_PORT: 5432
+      DB_PASSWORD: postgres
+      PAYMENT_SERVICE_BASE_URL: ${PAYMENT_SERVICE_BASE_URL:-}
+      MAX_DATA_ITEM_SIZE: ${MAX_DATA_ITEM_SIZE:-10737418240}
+      ALLOW_LISTED_ADDRESSES: ${ALLOW_LISTED_ADDRESSES:-}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      ELASTICACHE_HOST: ${ELASTICACHE_HOST:-redis}
+      ELASTICACHE_NO_CLUSTERING: ${ELASTICACHE_NO_CLUSTERING:-true}
+      REDIS_HOST: ${REDIS_HOST:-redis-queues}
+      REDIS_PORT_QUEUES: ${REDIS_PORT_QUEUES:-6381}
+      OPTICAL_BRIDGING_ENABLED: ${OPTICAL_BRIDGING_ENABLED:-true}
+      OPTICAL_BRIDGE_URL: ${OPTICAL_BRIDGE_URL:-http://host.docker.internal:4000/ar-io/admin/queue-data-item}
+      AR_IO_ADMIN_KEY: ${AR_IO_ADMIN_KEY:-}
+      SKIP_BALANCE_CHECKS: ${SKIP_BALANCE_CHECKS:-true}
+      DATA_ITEM_BUCKET: ${DATA_ITEM_BUCKET:-raw-data-items}
+      DATA_ITEM_BUCKET_REGION: ${DATA_ITEM_BUCKET_REGION:-us-east-1}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+    ports:
+      - "${PORT:-3001}:${PORT:-3001}"
+    volumes:
+      - upload-service-data-items:/temp
+    depends_on:
+      - upload-service-pg
+      - redis
+      - redis-queues
+      - minio
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: ["redis-server"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  redis-queues:
+    image: redis:7.2-alpine
+    container_name: redis-queues
+    restart: unless-stopped
+    ports:
+      - "6381:6381"
+    command: ["redis-server", "--port", "6381"]
+    volumes:
+      - redis-queues-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6381", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: upload-service-minio
+    ports:
+      - "9000:9000"  # S3 API
+      - "9001:9001"  # Console UI
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: upload-service-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set minio http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin123};
+      mc mb --ignore-existing minio/raw-data-items;
+      mc mb --ignore-existing minio/backup-data-items;
+      mc anonymous set download minio/raw-data-items;
+      mc anonymous set download minio/backup-data-items;
+      echo 'MinIO buckets created successfully';
+      "
+
+# fulfillment-service removed - replaced by BullMQ workers managed by PM2
+  # See ecosystem.config.js for worker configuration
+
+  migrator-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.migration
+      args:
+        NODE_VERSION: ${NODE_VERSION:-18.17.0}
+    environment:
+      DB_HOST: upload-service-pg
+      DB_PORT: 5432
+      DB_PASSWORD: postgres
+    depends_on:
+      - upload-service-pg
+
+  upload-service-pg:
+    image: postgres:16.1
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - upload-service-data:/var/lib/postgresql/data
+
+# localstack removed - AWS services replaced with self-hosted alternatives:
+  # - S3 → MinIO
+  # - SQS → BullMQ (Redis)
+  # - DynamoDB → PostgreSQL
+  # - Secrets Manager/SSM → Environment variables + PostgreSQL config table
+
+  arlocal:
+    profiles:
+      - test
+    image: textury/arlocal:v1.1.35
+    ports:
+      - "1984:1984"
+
+  test-runner:
+    profiles:
+      - test
+    build:
+      context: .
+      dockerfile: tests/integration.Dockerfile
+      args:
+        NODE_VERSION: ${NODE_VERSION:-18.17.0}
+    environment:
+      DB_HOST: upload-service-pg
+      DB_PASSWORD: postgres
+      DB_PORT: 5432
+      DISABLE_LOGS: ${DISABLE_LOGS:-true}
+      NODE_ENV: ${NODE_ENV:-test}
+      ARWEAVE_GATEWAY: ${ARWEAVE_GATEWAY:-http://arlocal:1984}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-minioadmin}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-minioadmin123}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      ELASTICACHE_HOST: ${ELASTICACHE_HOST:-redis}
+      ELASTICACHE_NO_CLUSTERING: ${ELASTICACHE_NO_CLUSTERING:-true}
+      # SQS variables removed - using BullMQ queues instead
+      REDIS_HOST: ${REDIS_HOST:-redis-queues}
+      REDIS_PORT_QUEUES: ${REDIS_PORT_QUEUES:-6381}
+      # MinIO (S3-compatible storage)
+      DATA_ITEM_BUCKET: ${DATA_ITEM_BUCKET:-raw-data-items}
+      DATA_ITEM_BUCKET_REGION: ${DATA_ITEM_BUCKET_REGION:-us-east-1}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+    depends_on:
+      upload-service-pg:
+        condition: service_started
+      arlocal:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+volumes:
+  upload-service-data:
+  upload-service-data-items:
+  redis-data:
+  redis-queues-data:
+  minio-data:

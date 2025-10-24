@@ -1,0 +1,22 @@
+{
+  "name": "@ar-io-bundler/shared",
+  "version": "1.0.0",
+  "description": "Shared code and utilities for AR.IO Bundler services",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "packageManager": "yarn@3.2.1",
+  "scripts": {
+    "build": "tsc --project ./tsconfig.json",
+    "clean": "rimraf lib",
+    "dev": "tsc --project ./tsconfig.json --watch",
+    "lint:check": "eslint . --ext .ts",
+    "lint:fix": "eslint . --ext .ts --fix",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "format:fix": "prettier --write \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "typescript": "^5.0.0"
+  }
+}

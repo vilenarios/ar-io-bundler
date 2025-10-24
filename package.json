@@ -1,0 +1,61 @@
+{
+  "name": "ar-io-bundler",
+  "version": "1.0.0",
+  "description": "Complete ANS-104 data bundling platform for Arweave with AR.IO Gateway integration",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "yarn workspaces foreach -pt run build",
+    "build:payment": "yarn workspace @ar-io-bundler/payment-service build",
+    "build:upload": "yarn workspace @ar-io-bundler/upload-service build",
+    "build:shared": "yarn workspace @ar-io-bundler/shared build",
+    "dev": "./scripts/dev.sh",
+    "dev:payment": "yarn workspace @ar-io-bundler/payment-service start:watch",
+    "dev:upload": "yarn workspace @ar-io-bundler/upload-service start:watch",
+    "test": "yarn workspaces foreach -pt run test",
+    "test:unit": "yarn workspaces foreach -pt run test:unit",
+    "test:payment": "yarn workspace @ar-io-bundler/payment-service test",
+    "test:upload": "yarn workspace @ar-io-bundler/upload-service test",
+    "test:e2e": "mocha tests/e2e/**/*.test.ts --timeout 30000",
+    "db:up": "docker compose up postgres redis-cache redis-queues minio minio-init -d",
+    "db:down": "docker compose down",
+    "db:migrate": "./scripts/migrate-all.sh",
+    "db:migrate:payment": "yarn workspace @ar-io-bundler/payment-service db:migrate:latest",
+    "db:migrate:upload": "yarn workspace @ar-io-bundler/upload-service db:migrate:latest",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "infra:restart": "docker compose restart",
+    "infra:logs": "docker compose logs -f",
+    "pm2:start": "pm2 start infrastructure/pm2/ecosystem.config.js",
+    "pm2:stop": "pm2 stop all",
+    "pm2:restart": "pm2 restart all",
+    "pm2:logs": "pm2 logs",
+    "pm2:monit": "pm2 monit",
+    "lint": "yarn workspaces foreach -pt run lint:check",
+    "lint:fix": "yarn workspaces foreach -pt run lint:fix",
+    "format": "prettier --write \"**/*.{ts,js,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,js,json,md}\"",
+    "typecheck": "yarn workspaces foreach -pt run typecheck",
+    "setup": "./scripts/setup.sh",
+    "clean": "yarn workspaces foreach -pt run clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "eslint": "^8.0.0",
+    "husky": "^8.0.0",
+    "lint-staged": "^14.0.0",
+    "prettier": "^3.0.0",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "yarn": ">=3.0.0"
+  },
+  "packageManager": "yarn@3.6.0",
+  "dependencies": {
+    "bitcoinjs-lib": "^7.0.0"
+  }
+}

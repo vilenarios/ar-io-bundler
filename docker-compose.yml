@@ -1,0 +1,135 @@
+version: '3.8'
+
+services:
+  # PostgreSQL - Both payment and upload databases
+  postgres:
+    image: postgres:16.1
+    container_name: ar-io-bundler-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-turbo_admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init-databases.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-turbo_admin}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis - Cache (port 6379)
+  redis-cache:
+    image: redis:7.2-alpine
+    container_name: ar-io-bundler-redis-cache
+    restart: unless-stopped
+    ports:
+      - "${REDIS_CACHE_PORT:-6379}:6379"
+    command: ["redis-server"]
+    volumes:
+      - redis-cache-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  # Redis - Queues (port 6381)
+  redis-queues:
+    image: redis:7.2-alpine
+    container_name: ar-io-bundler-redis-queues
+    restart: unless-stopped
+    ports:
+      - "${REDIS_QUEUE_PORT:-6381}:6381"
+    command: ["redis-server", "--port", "6381"]
+    volumes:
+      - redis-queues-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6381", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  # MinIO - S3-compatible object storage
+  minio:
+    image: minio/minio:latest
+    container_name: ar-io-bundler-minio
+    ports:
+      - "9000:9000"  # S3 API
+      - "9001:9001"  # Console UI
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-minioadmin123}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # MinIO Initialization - Create buckets
+  minio-init:
+    image: minio/mc:latest
+    container_name: ar-io-bundler-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set minio http://minio:9000 ${S3_ACCESS_KEY_ID:-minioadmin} ${S3_SECRET_ACCESS_KEY:-minioadmin123};
+      mc mb --ignore-existing minio/raw-data-items;
+      mc mb --ignore-existing minio/backup-data-items;
+      mc anonymous set download minio/raw-data-items;
+      mc anonymous set download minio/backup-data-items;
+      echo 'MinIO buckets created successfully';
+      "
+
+  # Payment Service Migrator
+  payment-migrator:
+    build:
+      context: ./packages/payment-service
+      dockerfile: ../../infrastructure/docker/payment-service.Dockerfile
+    container_name: ar-io-bundler-payment-migrator
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${PAYMENT_DB_NAME:-payment_service}
+      DB_USER: ${DB_USER:-turbo_admin}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+    command: yarn db:migrate:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Upload Service Migrator
+  upload-migrator:
+    build:
+      context: ./packages/upload-service
+      dockerfile: ../../infrastructure/docker/upload-service.Dockerfile
+    container_name: ar-io-bundler-upload-migrator
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${UPLOAD_DB_NAME:-upload_service}
+      DB_USER: ${DB_USER:-turbo_admin}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+    command: yarn db:migrate:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  redis-cache-data:
+  redis-queues-data:
+  minio-data:
+
+# Notes:
+# - Payment and upload services are managed by PM2, not docker-compose
+# - AR.IO Gateway is deployed separately
+# - This compose file is for infrastructure only
