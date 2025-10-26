@@ -25,6 +25,13 @@ module.exports = {
         REDIS_QUEUE_PORT: "6381",
         DB_HOST: "localhost",
         DB_PORT: "5432",
+        // Wallet addresses (public - safe to commit)
+        ARWEAVE_ADDRESS: "7gI4LqBxQSyTRu5e2Zfgyw2UEMgsUsxsoW2KajneFC8",
+        ARIO_ADDRESS: "7gI4LqBxQSyTRu5e2Zfgyw2UEMgsUsxsoW2KajneFC8",
+        ETHEREUM_ADDRESS: "0xCFd3f996447a541Cbfba5422310EDb417d9f2cE6",
+        MATIC_ADDRESS: "0xCFd3f996447a541Cbfba5422310EDb417d9f2cE6",
+        BASE_ETH_ADDRESS: "0xCFd3f996447a541Cbfba5422310EDb417d9f2cE6",
+        SOLANA_ADDRESS: "2VU4m6MgSZRCcCRkbhLvHZ9CVhimmphuNBhwyf9VRiJy",
       },
       error_file: "/home/vilenarios/ar-io-bundler/logs/payment-service-error.log",
       out_file: "/home/vilenarios/ar-io-bundler/logs/payment-service-out.log",
