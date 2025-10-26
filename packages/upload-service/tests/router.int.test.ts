@@ -31,10 +31,6 @@ import logger from "../src/logger";
 import { createServer } from "../src/server";
 import { JWKInterface } from "../src/types/jwkTypes";
 import { W } from "../src/types/winston";
-import {
-  deleteDynamoDataItemOffsets,
-  putDynamoOffsetsInfo,
-} from "../src/utils/dynamoDbUtils";
 import { MultiPartUploadNotFound } from "../src/utils/errors";
 import { getS3ObjectStore } from "../src/utils/objectStoreUtils";
 import { verifyReceipt } from "../src/utils/verifyReceipt";
@@ -105,23 +101,10 @@ describe("Router tests", function () {
       server = await createServer({
         database,
       });
-
-      await putDynamoOffsetsInfo({
-        dataItemId: testTxId,
-        parentDataItemId: "uMguurlEh9a7MKYiauKGlbxG6OjP2xaGmWa1-vrHVh8",
-        startOffsetInParentDataItemPayload: 321,
-        rawContentLength: 12345,
-        payloadDataStart: 1234,
-        payloadContentType: "application/json",
-        logger: logger,
-      });
     });
 
     after(() => {
       closeServer();
-      deleteDynamoDataItemOffsets(testTxId, logger).catch(() => {
-        logger.warn("Failed to delete stub data item offsets from DynamoDB");
-      });
     });
 
     it("returns the expected data item status result for new data item", async () => {
@@ -230,26 +213,6 @@ describe("Router tests", function () {
         database,
       });
 
-      await putDynamoOffsetsInfo({
-        dataItemId: testTxId,
-        parentDataItemId: "uMguurlEh9a7MKYiauKGlbxG6OjP2xaGmWa1-vrHVh8",
-        startOffsetInParentDataItemPayload: 123,
-        rawContentLength: 54321,
-        payloadDataStart: 2345,
-        payloadContentType: "text/html",
-        logger: logger,
-      });
-
-      await putDynamoOffsetsInfo({
-        dataItemId: testTxId2,
-        rootBundleId: "uMguurlEh9a7MKYiauKGlbxG6OjP2xaGmWa1-vrHVh8",
-        startOffsetInRootBundle: 123,
-        rawContentLength: 43210,
-        payloadDataStart: 3456,
-        payloadContentType: "application/json",
-        logger: logger,
-      });
-
       stub(database, "getDataItemInfo").resolves({
         assessedWinstonPrice: W("500"),
         status: "new",
@@ -260,12 +223,6 @@ describe("Router tests", function () {
 
     after(() => {
       closeServer();
-      deleteDynamoDataItemOffsets(testTxId, logger).catch(() => {
-        logger.warn("Failed to delete stub data item offsets from DynamoDB");
-      });
-      deleteDynamoDataItemOffsets(testTxId2, logger).catch(() => {
-        logger.warn("Failed to delete stub data item offsets from DynamoDB");
-      });
     });
 
     it("returns offsets into parent when present", async () => {
