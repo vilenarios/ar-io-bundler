@@ -13,7 +13,7 @@ module.exports = {
     // Payment Service
     {
       name: "payment-service",
-      script: "./lib/server.js",
+      script: "./lib/index.js",
       cwd: "./packages/payment-service",
       instances: process.env.API_INSTANCES || 2,
       exec_mode: "cluster",
@@ -38,7 +38,7 @@ module.exports = {
     // Upload Service - API
     {
       name: "upload-api",
-      script: "./lib/server.js",
+      script: "./lib/index.js",
       cwd: "./packages/upload-service",
       instances: process.env.API_INSTANCES || 2,
       exec_mode: "cluster",
