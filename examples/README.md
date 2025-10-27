@@ -95,9 +95,120 @@ node x402-upload-example.js /path/to/file
 
 ---
 
-### 2. Browser Example (`x402-browser-upload.html`)
+### 2. Browser Example with x402fetch (`x402-browser-upload-with-x402fetch.html`) ⭐ RECOMMENDED
 
-A web-based interface for uploading files using MetaMask.
+**The easiest way!** Uses Coinbase's official `x402fetch` library that automatically handles the entire payment flow.
+
+#### What is x402fetch?
+
+`x402fetch` is Coinbase's client library that works like regular `fetch()` but automatically handles x402 payments:
+
+```javascript
+// Instead of manually handling price quotes, signatures, headers...
+const response = await x402fetch(url, {
+  method: 'POST',
+  body: fileData,
+  signer: metamaskSigner  // Just pass your MetaMask signer!
+});
+// x402fetch does everything automatically! 🎉
+```
+
+#### Features
+
+- ✅ **Automatic price quote requests** - No manual API calls needed
+- ✅ **Automatic EIP-712 signing** - Prompts MetaMask at the right time
+- ✅ **Automatic X-PAYMENT headers** - No manual header construction
+- ✅ **Built-in retry logic** - Handles network errors gracefully
+- ✅ **Progress callbacks** - Know exactly what's happening
+- ✅ **Works like fetch()** - Familiar API, just with payments!
+
+#### Installation
+
+No installation! Just open the HTML file:
+
+```bash
+# Open directly
+open examples/x402-browser-upload-with-x402fetch.html
+
+# Or serve locally
+python3 -m http.server 8080
+# Visit http://localhost:8080/x402-browser-upload-with-x402fetch.html
+```
+
+#### How It Works
+
+```javascript
+// 🎉 The entire payment flow in one function call!
+const response = await window.x402.fetch(`${uploadUrl}/v1/tx`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/octet-stream',
+    'Content-Length': fileSize.toString(),
+  },
+  body: fileBuffer,
+
+  // x402-specific options
+  signer: signer,           // Your MetaMask signer
+  network: 'base-sepolia',  // Which network to use
+
+  // Optional: Progress callbacks
+  onPaymentRequired: (requirements) => {
+    console.log('Payment needed:', requirements);
+  },
+  onPaymentSigning: () => {
+    console.log('Please sign in MetaMask...');
+  },
+  onPaymentSigned: () => {
+    console.log('Payment signed!');
+  },
+});
+
+const data = await response.json();
+console.log('Uploaded:', data.id);
+```
+
+#### Comparison
+
+**Manual x402 (70+ lines):**
+```javascript
+// 1. Get price quote
+const quote = await axios.get('/v1/x402/price/...');
+
+// 2. Build EIP-712 domain
+const domain = { name: 'USD Coin', version: '2', ... };
+
+// 3. Create authorization
+const authorization = { from, to, value, validAfter, validBefore, nonce };
+
+// 4. Sign with MetaMask
+const signature = await signer.signTypedData(domain, types, authorization);
+
+// 5. Build payment payload
+const paymentPayload = { x402Version: 1, scheme: 'eip-3009', ... };
+
+// 6. Encode as base64
+const paymentHeader = btoa(JSON.stringify(paymentPayload));
+
+// 7. Upload with header
+const response = await axios.post(url, data, {
+  headers: { 'X-PAYMENT': paymentHeader }
+});
+```
+
+**x402fetch (5 lines):**
+```javascript
+const response = await x402fetch(url, {
+  method: 'POST',
+  body: data,
+  signer: signer
+});
+```
+
+---
+
+### 3. Browser Example - Manual (`x402-browser-upload.html`)
+
+A web-based interface showing the **manual x402 implementation** (for educational purposes).
 
 #### Installation
 

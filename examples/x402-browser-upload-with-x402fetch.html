@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AR.IO x402 Upload (with x402fetch)</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.10.0/dist/ethers.umd.min.js"></script>
+  <script src="https://unpkg.com/@coinbase/x402@latest/dist/x402.umd.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      border-bottom: 3px solid #0070f3;
+      padding-bottom: 10px;
+    }
+    .badge {
+      display: inline-block;
+      background: #0070f3;
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      margin-left: 10px;
+    }
+    .step {
+      margin: 20px 0;
+      padding: 15px;
+      background: #f9f9f9;
+      border-left: 4px solid #0070f3;
+    }
+    .step h3 {
+      margin-top: 0;
+      color: #0070f3;
+    }
+    input[type="file"] {
+      margin: 10px 0;
+    }
+    button {
+      background: #0070f3;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      border-radius: 5px;
+      cursor: pointer;
+      margin: 10px 5px 10px 0;
+    }
+    button:hover {
+      background: #0051cc;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .log {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 15px;
+      border-radius: 5px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      max-height: 400px;
+      overflow-y: auto;
+      margin: 20px 0;
+    }
+    .log-entry {
+      margin: 5px 0;
+    }
+    .log-success { color: #4caf50; }
+    .log-error { color: #f44336; }
+    .log-info { color: #2196f3; }
+    .log-warning { color: #ff9800; }
+    .config {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      padding: 15px;
+      border-radius: 5px;
+      margin: 20px 0;
+    }
+    .result {
+      background: #d4edda;
+      border: 1px solid #28a745;
+      padding: 15px;
+      border-radius: 5px;
+      margin: 20px 0;
+    }
+    .result pre {
+      background: white;
+      padding: 10px;
+      border-radius: 3px;
+      overflow-x: auto;
+    }
+    .info-box {
+      background: #e7f3ff;
+      border-left: 4px solid #0070f3;
+      padding: 15px;
+      margin: 20px 0;
+    }
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+      margin: 20px 0;
+    }
+    .comparison > div {
+      padding: 15px;
+      border-radius: 5px;
+    }
+    .comparison .manual {
+      background: #ffe7e7;
+      border: 1px solid #ffcccc;
+    }
+    .comparison .x402fetch {
+      background: #e7ffe7;
+      border: 1px solid #ccffcc;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚀 AR.IO x402 Upload <span class="badge">using x402fetch</span></h1>
+    <p>Upload files to Arweave and pay with USDC using Coinbase's x402fetch library.</p>
+
+    <div class="info-box">
+      <h3>✨ What is x402fetch?</h3>
+      <p><strong>x402fetch</strong> is Coinbase's official client library that automatically handles the entire x402 payment flow for you:</p>
+      <ul>
+        <li>✅ Automatically requests price quotes (402 responses)</li>
+        <li>✅ Prompts MetaMask for EIP-712 signatures</li>
+        <li>✅ Adds X-PAYMENT headers automatically</li>
+        <li>✅ Retries and error handling built-in</li>
+        <li>✅ Just works like regular fetch() but with payments!</li>
+      </ul>
+    </div>
+
+    <div class="comparison">
+      <div class="manual">
+        <strong>❌ Manual x402 (old way):</strong>
+        <pre style="font-size: 11px; margin-top: 10px;">
+// 1. Get price quote
+const quote = await fetch(priceUrl);
+// 2. Create EIP-712 signature
+const sig = await signer.sign(...);
+// 3. Build payment header
+const header = btoa(JSON.stringify({
+  signature: sig,
+  authorization: {...}
+}));
+// 4. Upload with header
+await fetch(uploadUrl, {
+  headers: { 'X-PAYMENT': header }
+});
+        </pre>
+      </div>
+      <div class="x402fetch">
+        <strong>✅ x402fetch (new way):</strong>
+        <pre style="font-size: 11px; margin-top: 10px;">
+// Just use x402fetch!
+const response = await x402fetch(
+  uploadUrl,
+  {
+    method: 'POST',
+    body: fileData,
+    signer: metamaskSigner
+  }
+);
+// That's it! 🎉
+        </pre>
+      </div>
+    </div>
+
+    <div class="config">
+      <h3>⚙️ Configuration</h3>
+      <label>
+        Upload Service URL:
+        <input type="text" id="uploadUrl" value="http://localhost:3000" style="width: 100%; margin: 5px 0; padding: 5px;">
+      </label>
+      <label>
+        Network:
+        <select id="network" style="width: 100%; margin: 5px 0; padding: 5px;">
+          <option value="base-sepolia">Base Sepolia (Testnet)</option>
+          <option value="base-mainnet">Base Mainnet</option>
+          <option value="ethereum-sepolia">Ethereum Sepolia (Testnet)</option>
+          <option value="ethereum-mainnet">Ethereum Mainnet</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="step">
+      <h3>Step 1: Connect Wallet</h3>
+      <button id="connectBtn" onclick="connectWallet()">Connect MetaMask</button>
+      <div id="walletInfo"></div>
+    </div>
+
+    <div class="step">
+      <h3>Step 2: Select File</h3>
+      <input type="file" id="fileInput">
+      <div id="fileInfo"></div>
+    </div>
+
+    <div class="step">
+      <h3>Step 3: Upload with x402fetch</h3>
+      <button id="uploadBtn" onclick="uploadFile()" disabled>Upload & Pay with USDC</button>
+      <p style="font-size: 13px; color: #666; margin-top: 10px;">
+        x402fetch will automatically handle price quotes and payment signing for you!
+      </p>
+    </div>
+
+    <h3>📋 Log</h3>
+    <div class="log" id="log"></div>
+
+    <div id="result" style="display: none;" class="result">
+      <h3>✅ Upload Successful!</h3>
+      <div id="resultContent"></div>
+    </div>
+  </div>
+
+  <script>
+    let provider;
+    let signer;
+    let userAddress;
+    let selectedFile;
+
+    const NETWORK_CONFIG = {
+      'base-sepolia': {
+        chainId: 84532,
+        usdcAddress: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+        name: 'Base Sepolia',
+      },
+      'base-mainnet': {
+        chainId: 8453,
+        usdcAddress: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+        name: 'Base Mainnet',
+      },
+      'ethereum-sepolia': {
+        chainId: 11155111,
+        usdcAddress: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
+        name: 'Ethereum Sepolia',
+      },
+      'ethereum-mainnet': {
+        chainId: 1,
+        usdcAddress: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+        name: 'Ethereum Mainnet',
+      },
+    };
+
+    function log(message, type = 'info') {
+      const logDiv = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.className = `log-entry log-${type}`;
+      const timestamp = new Date().toLocaleTimeString();
+      entry.textContent = `[${timestamp}] ${message}`;
+      logDiv.appendChild(entry);
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    async function connectWallet() {
+      try {
+        if (typeof window.ethereum === 'undefined') {
+          log('MetaMask not installed!', 'error');
+          alert('Please install MetaMask to use this example');
+          return;
+        }
+
+        log('Connecting to MetaMask...', 'info');
+        provider = new ethers.BrowserProvider(window.ethereum);
+        await provider.send('eth_requestAccounts', []);
+        signer = await provider.getSigner();
+        userAddress = await signer.getAddress();
+
+        log(`Connected: ${userAddress}`, 'success');
+
+        // Check USDC balance
+        const networkKey = document.getElementById('network').value;
+        const config = NETWORK_CONFIG[networkKey];
+        const usdcContract = new ethers.Contract(
+          config.usdcAddress,
+          ['function balanceOf(address) view returns (uint256)'],
+          provider
+        );
+
+        const balance = await usdcContract.balanceOf(userAddress);
+        const balanceFormatted = ethers.formatUnits(balance, 6);
+
+        document.getElementById('walletInfo').innerHTML = `
+          <p>✅ Connected: ${userAddress}</p>
+          <p>💵 USDC Balance: ${balanceFormatted} USDC</p>
+        `;
+
+        log(`USDC Balance: ${balanceFormatted} USDC`, 'info');
+
+        document.getElementById('uploadBtn').disabled = !selectedFile;
+      } catch (error) {
+        log(`Connection failed: ${error.message}`, 'error');
+      }
+    }
+
+    document.getElementById('fileInput').addEventListener('change', (e) => {
+      selectedFile = e.target.files[0];
+      if (selectedFile) {
+        log(`File selected: ${selectedFile.name} (${selectedFile.size} bytes)`, 'info');
+        document.getElementById('fileInfo').innerHTML = `
+          <p>📄 ${selectedFile.name}</p>
+          <p>📊 Size: ${(selectedFile.size / 1024).toFixed(2)} KB</p>
+        `;
+        document.getElementById('uploadBtn').disabled = !signer;
+      }
+    });
+
+    async function uploadFile() {
+      if (!selectedFile || !signer) {
+        log('Please connect wallet and select a file', 'error');
+        return;
+      }
+
+      document.getElementById('uploadBtn').disabled = true;
+      document.getElementById('result').style.display = 'none';
+
+      try {
+        const uploadUrl = document.getElementById('uploadUrl').value;
+        const networkKey = document.getElementById('network').value;
+
+        log('Reading file...', 'info');
+        const fileBuffer = await selectedFile.arrayBuffer();
+
+        // 🎉 THIS IS THE MAGIC! Just use x402fetch!
+        log('Uploading with x402fetch (automatic payment handling)...', 'info');
+        log('x402fetch will:', 'info');
+        log('  1. Request price quote from server (402 response)', 'info');
+        log('  2. Prompt you to sign payment with MetaMask', 'warning');
+        log('  3. Add X-PAYMENT header automatically', 'info');
+        log('  4. Upload your file', 'info');
+
+        // x402fetch automatically handles the entire payment flow!
+        const response = await window.x402.fetch(`${uploadUrl}/v1/tx`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': selectedFile.size.toString(),
+          },
+          body: fileBuffer,
+          // x402-specific options
+          signer: signer,
+          network: networkKey,
+          // Optional: callbacks for progress
+          onPaymentRequired: (requirements) => {
+            log(`💰 Payment required: ${requirements.accepts[0].maxAmountRequired} USDC`, 'warning');
+          },
+          onPaymentSigning: () => {
+            log('📝 Please sign payment in MetaMask...', 'warning');
+          },
+          onPaymentSigned: () => {
+            log('✅ Payment signed!', 'success');
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error(`Upload failed: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        log('Upload successful!', 'success');
+
+        // Display result
+        document.getElementById('result').style.display = 'block';
+        document.getElementById('resultContent').innerHTML = `
+          <p><strong>Data Item ID:</strong> ${data.id}</p>
+          <p><strong>Transaction Hash:</strong> ${data.x402Payment?.txHash || 'N/A'}</p>
+          <p><strong>Network:</strong> ${data.x402Payment?.network || 'N/A'}</p>
+          <p><strong>Payment Mode:</strong> ${data.x402Payment?.mode || 'N/A'}</p>
+          <p><strong>View on Arweave:</strong> <a href="https://arweave.net/${data.id}" target="_blank">https://arweave.net/${data.id}</a></p>
+          <details>
+            <summary>Full Receipt (click to expand)</summary>
+            <pre>${JSON.stringify(data, null, 2)}</pre>
+          </details>
+        `;
+
+      } catch (error) {
+        log(`Upload failed: ${error.message}`, 'error');
+        console.error('Full error:', error);
+      } finally {
+        document.getElementById('uploadBtn').disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>
