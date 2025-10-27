@@ -20,6 +20,7 @@ import { Database } from "./database/database";
 import { EmailProvider } from "./emailProvider";
 import { GatewayMap } from "./gateway";
 import { PricingService } from "./pricing/pricing";
+import { X402Service } from "./x402/x402Service";
 
 export interface Architecture {
   paymentDatabase: Database;
@@ -27,4 +28,5 @@ export interface Architecture {
   stripe: Stripe;
   emailProvider?: EmailProvider;
   gatewayMap: GatewayMap;
+  x402Service: X402Service;
 }

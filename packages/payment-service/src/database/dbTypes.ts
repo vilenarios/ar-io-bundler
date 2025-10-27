@@ -802,3 +802,131 @@ export type FailedArNSPurchaseDBInsert = ArNSPurchaseDBInsert & {
 export type FailedArNSPurchaseDBResult = FailedArNSPurchaseDBInsert & {
   failed_date: string;
 };
+
+// x402 Payment Types
+
+export type X402PaymentMode = "payg" | "topup" | "hybrid";
+
+export type X402PaymentStatus =
+  | "pending_validation"
+  | "confirmed"
+  | "refunded"
+  | "fraud_penalty";
+
+export interface X402PaymentTransaction {
+  id: string; // UUID
+  userAddress: UserAddress;
+  userAddressType: UserAddressType;
+  txHash: string; // On-chain transaction hash
+  network: string; // base-mainnet, ethereum-mainnet, etc.
+  tokenAddress: string; // USDC contract address
+  usdcAmount: string; // Amount in USDC atomic units (6 decimals)
+  wincAmount: WC; // Equivalent Winston credits
+  mode: X402PaymentMode;
+  dataItemId?: DataItemId; // If PAYG/hybrid
+  declaredByteCount?: ByteCount; // Declared size
+  actualByteCount?: ByteCount; // Actual size (filled later)
+  status: X402PaymentStatus;
+  paidAt: Timestamp;
+  finalizedAt?: Timestamp; // When validation completed
+  refundWinc?: WC; // If overpaid
+  payerAddress: string; // Ethereum address that paid
+}
+
+export interface X402PaymentTransactionDBInsert {
+  id: string;
+  user_address: string;
+  user_address_type: string;
+  tx_hash: string;
+  network: string;
+  token_address: string;
+  usdc_amount: string;
+  winc_amount: string;
+  mode: X402PaymentMode;
+  data_item_id?: string;
+  declared_byte_count?: string;
+  actual_byte_count?: string;
+  status: X402PaymentStatus;
+  paid_at?: string;
+  finalized_at?: string;
+  refund_winc?: string;
+  payer_address: string;
+}
+
+export interface X402PaymentTransactionDBResult
+  extends Required<Omit<X402PaymentTransactionDBInsert, "finalized_at">> {
+  paid_at: string;
+  finalized_at?: string;
+}
+
+export interface X402PaymentReservation {
+  dataItemId: DataItemId;
+  x402PaymentId: string; // FK to x402_payment_transaction
+  wincReserved: WC; // Amount reserved for this upload
+  createdAt: Timestamp;
+  expiresAt: Timestamp; // Auto-expire after 1 hour
+}
+
+export interface X402PaymentReservationDBInsert {
+  data_item_id: string;
+  x402_payment_id: string;
+  winc_reserved: string;
+  created_at?: string;
+  expires_at: string;
+}
+
+export interface X402PaymentReservationDBResult
+  extends Required<X402PaymentReservationDBInsert> {
+  created_at: string;
+}
+
+export interface CreateX402PaymentParams {
+  userAddress: UserAddress;
+  userAddressType: UserAddressType;
+  txHash: string;
+  network: string;
+  tokenAddress: string;
+  usdcAmount: string;
+  wincAmount: WC;
+  mode: X402PaymentMode;
+  dataItemId?: DataItemId;
+  declaredByteCount?: ByteCount;
+  payerAddress: string;
+}
+
+export interface FinalizeX402PaymentParams {
+  dataItemId: DataItemId;
+  actualByteCount: ByteCount;
+  status: "confirmed" | "fraud_penalty" | "refunded";
+  refundWinc?: WC;
+}
+
+export const auditChangeReasons = [
+  "upload",
+  "approved_upload",
+  "payment",
+  "crypto_payment",
+  "bypassed_payment",
+  "account_creation",
+  "bypassed_account_creation",
+  "chargeback",
+  "refund",
+  "refunded_upload",
+  "gifted_payment",
+  "bypassed_gifted_payment",
+  "gifted_payment_redemption",
+  "gifted_account_creation",
+  "delegated_payment_approval",
+  "delegated_payment_revoke",
+  "delegated_payment_expired",
+  "arns_account_creation",
+  "arns_purchase_order",
+  "approved_arns_purchase_order",
+  "arns_purchase_order_failed",
+  "x402_payment",
+  "x402_overpayment_refund",
+  "x402_fraud_penalty",
+] as const;
+
+// Update the AuditChangeReason type to use the const array
+export type AuditChangeReasonNew = (typeof auditChangeReasons)[number];

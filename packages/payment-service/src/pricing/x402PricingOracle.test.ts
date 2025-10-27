@@ -1,0 +1,232 @@
+/**
+ * Copyright (C) 2022-2024 Permanent Data Solutions, Inc. All Rights Reserved.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+import { expect } from "chai";
+import { stub, SinonStub } from "sinon";
+
+import { Winston } from "../types";
+import { X402PricingOracle } from "./x402PricingOracle";
+
+describe("X402PricingOracle", () => {
+  let oracle: X402PricingOracle;
+  let fetchStub: SinonStub;
+
+  beforeEach(() => {
+    oracle = new X402PricingOracle();
+    // Stub the global fetch function
+    fetchStub = stub(global, "fetch");
+  });
+
+  afterEach(() => {
+    fetchStub.restore();
+  });
+
+  describe("getARPriceInUSD", () => {
+    it("fetches and caches AR price from CoinGecko", async () => {
+      const mockResponse = {
+        ok: true,
+        json: async () => ({ arweave: { usd: 25.5 } }),
+      };
+      fetchStub.resolves(mockResponse);
+
+      const price = await oracle.getARPriceInUSD();
+
+      expect(price).to.equal(25.5);
+      expect(fetchStub.calledOnce).to.be.true;
+      expect(fetchStub.firstCall.args[0]).to.include("coingecko.com");
+    });
+
+    it("returns cached price on subsequent calls within cache window", async () => {
+      const mockResponse = {
+        ok: true,
+        json: async () => ({ arweave: { usd: 25.5 } }),
+      };
+      fetchStub.resolves(mockResponse);
+
+      const price1 = await oracle.getARPriceInUSD();
+      const price2 = await oracle.getARPriceInUSD();
+
+      expect(price1).to.equal(25.5);
+      expect(price2).to.equal(25.5);
+      expect(fetchStub.calledOnce).to.be.true; // Only called once due to cache
+    });
+
+    it("throws error when CoinGecko API fails", async () => {
+      const mockResponse = {
+        ok: false,
+        status: 500,
+        statusText: "Internal Server Error",
+      };
+      fetchStub.resolves(mockResponse);
+
+      try {
+        await oracle.getARPriceInUSD();
+        expect.fail("Should have thrown error");
+      } catch (error: any) {
+        expect(error.message).to.include("Failed to fetch AR price");
+      }
+    });
+
+    it("throws error when AR price is missing from response", async () => {
+      const mockResponse = {
+        ok: true,
+        json: async () => ({}),
+      };
+      fetchStub.resolves(mockResponse);
+
+      try {
+        await oracle.getARPriceInUSD();
+        expect.fail("Should have thrown error");
+      } catch (error: any) {
+        expect(error.message).to.include("Invalid price data");
+      }
+    });
+  });
+
+  describe("getUSDCForWinston", () => {
+    beforeEach(() => {
+      const mockResponse = {
+        ok: true,
+        json: async () => ({ arweave: { usd: 20.0 } }),
+      };
+      fetchStub.resolves(mockResponse);
+    });
+
+    it("converts winston to USDC correctly for 1 AR", async () => {
+      // 1 AR = 1,000,000,000,000 Winston
+      // 1 AR = $20
+      // Expected USDC (6 decimals) = 20,000,000
+      const winston = "1000000000000" as Winston;
+      const usdc = await oracle.getUSDCForWinston(winston);
+
+      expect(usdc).to.equal("20000000");
+    });
+
+    it("converts winston to USDC correctly for 0.1 AR", async () => {
+      // 0.1 AR = 100,000,000,000 Winston
+      // 0.1 AR = $2
+      // Expected USDC (6 decimals) = 2,000,000
+      const winston = "100000000000" as Winston;
+      const usdc = await oracle.getUSDCForWinston(winston);
+
+      expect(usdc).to.equal("2000000");
+    });
+
+    it("converts winston to USDC correctly for 0.01 AR", async () => {
+      // 0.01 AR = 10,000,000,000 Winston
+      // 0.01 AR = $0.20
+      // Expected USDC (6 decimals) = 200,000
+      const winston = "10000000000" as Winston;
+      const usdc = await oracle.getUSDCForWinston(winston);
+
+      expect(usdc).to.equal("200000");
+    });
+
+    it("rounds up fractional USDC amounts", async () => {
+      // Very small winston amount that results in fractional USDC
+      const winston = "1000000" as Winston; // 0.000001 AR
+      const usdc = await oracle.getUSDCForWinston(winston);
+
+      // Even a tiny amount should round up to at least 1
+      expect(BigInt(usdc)).to.be.greaterThanOrEqual(BigInt(1));
+    });
+
+    it("handles large winston amounts correctly", async () => {
+      // 1000 AR = 1,000,000,000,000,000 Winston
+      // 1000 AR = $20,000
+      // Expected USDC (6 decimals) = 20,000,000,000
+      const winston = "1000000000000000" as Winston;
+      const usdc = await oracle.getUSDCForWinston(winston);
+
+      expect(usdc).to.equal("20000000000");
+    });
+  });
+
+  describe("getWinstonForUSDC", () => {
+    beforeEach(() => {
+      const mockResponse = {
+        ok: true,
+        json: async () => ({ arweave: { usd: 20.0 } }),
+      };
+      fetchStub.resolves(mockResponse);
+    });
+
+    it("converts USDC to winston correctly for $20", async () => {
+      // $20 USDC = 20,000,000 (6 decimals)
+      // $20 = 1 AR = 1,000,000,000,000 Winston
+      const usdc = "20000000";
+      const winston = await oracle.getWinstonForUSDC(usdc);
+
+      expect(winston).to.equal("1000000000000");
+    });
+
+    it("converts USDC to winston correctly for $2", async () => {
+      // $2 USDC = 2,000,000 (6 decimals)
+      // $2 = 0.1 AR = 100,000,000,000 Winston
+      const usdc = "2000000";
+      const winston = await oracle.getWinstonForUSDC(usdc);
+
+      expect(winston).to.equal("100000000000");
+    });
+
+    it("converts USDC to winston correctly for $0.20", async () => {
+      // $0.20 USDC = 200,000 (6 decimals)
+      // $0.20 = 0.01 AR = 10,000,000,000 Winston
+      const usdc = "200000";
+      const winston = await oracle.getWinstonForUSDC(usdc);
+
+      expect(winston).to.equal("10000000000");
+    });
+
+    it("handles large USDC amounts correctly", async () => {
+      // $20,000 USDC = 20,000,000,000 (6 decimals)
+      // $20,000 = 1000 AR = 1,000,000,000,000,000 Winston
+      const usdc = "20000000000";
+      const winston = await oracle.getWinstonForUSDC(usdc);
+
+      expect(winston).to.equal("1000000000000000");
+    });
+
+    it("rounds winston amounts correctly", async () => {
+      // Odd USDC amount that may result in fractional winston
+      const usdc = "1";
+      const winston = await oracle.getWinstonForUSDC(usdc);
+
+      // Should be a valid winston amount (integer)
+      expect(winston).to.match(/^\d+$/);
+    });
+  });
+
+  describe("price conversion round-trip", () => {
+    beforeEach(() => {
+      const mockResponse = {
+        ok: true,
+        json: async () => ({ arweave: { usd: 20.0 } }),
+      };
+      fetchStub.resolves(mockResponse);
+    });
+
+    it("maintains precision in round-trip conversion", async () => {
+      const originalWinston = "1000000000000" as Winston; // 1 AR
+
+      // Convert to USDC and back
+      const usdc = await oracle.getUSDCForWinston(originalWinston);
+      const winstonBack = await oracle.getWinstonForUSDC(usdc);
+
+      expect(winstonBack).to.equal(originalWinston);
+    });
+  });
+});

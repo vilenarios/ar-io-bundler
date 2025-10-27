@@ -34,10 +34,12 @@ import {
   CreatePaymentReceiptParams,
   CreatePendingTransactionParams,
   CreateTopUpQuoteParams,
+  CreateX402PaymentParams,
   CreditedPaymentTransaction,
   DataItemId,
   DelegatedPaymentApproval,
   FailedPaymentTransaction,
+  FinalizeX402PaymentParams,
   GetBalanceResult,
   IntervalUnit,
   PaymentAdjustmentCatalog,
@@ -53,6 +55,8 @@ import {
   User,
   UserAddress,
   UserAddressType,
+  X402PaymentReservation,
+  X402PaymentTransaction,
 } from "./dbTypes";
 
 export type WincUsedForUploadAdjustmentParams = {
@@ -234,4 +238,58 @@ export interface Database {
     nonce: string,
     failedReason: string
   ) => Promise<void>;
+
+  // x402 Payment Methods
+
+  /**
+   * Create a new x402 payment transaction
+   */
+  createX402Payment: (
+    params: CreateX402PaymentParams
+  ) => Promise<X402PaymentTransaction>;
+
+  /**
+   * Get an x402 payment transaction by ID
+   */
+  getX402Payment: (paymentId: string) => Promise<X402PaymentTransaction | undefined>;
+
+  /**
+   * Get an x402 payment transaction by transaction hash
+   */
+  getX402PaymentByTxHash: (txHash: string) => Promise<X402PaymentTransaction | undefined>;
+
+  /**
+   * Get an x402 payment transaction by data item ID
+   */
+  getX402PaymentByDataItemId: (dataItemId: DataItemId) => Promise<X402PaymentTransaction | undefined>;
+
+  /**
+   * Finalize an x402 payment after upload validation
+   */
+  finalizeX402Payment: (params: FinalizeX402PaymentParams) => Promise<void>;
+
+  /**
+   * Create an x402 payment reservation for a data item
+   */
+  createX402PaymentReservation: (params: {
+    dataItemId: DataItemId;
+    x402PaymentId: string;
+    wincReserved: WC;
+    expiresAt: string;
+  }) => Promise<void>;
+
+  /**
+   * Get an x402 payment reservation by data item ID
+   */
+  getX402PaymentReservation: (dataItemId: DataItemId) => Promise<X402PaymentReservation | undefined>;
+
+  /**
+   * Delete an x402 payment reservation
+   */
+  deleteX402PaymentReservation: (dataItemId: DataItemId) => Promise<void>;
+
+  /**
+   * Clean up expired x402 payment reservations
+   */
+  cleanupExpiredX402Reservations: () => Promise<number>;
 }

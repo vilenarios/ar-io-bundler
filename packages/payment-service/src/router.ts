@@ -41,6 +41,9 @@ import { revokeApprovals } from "./routes/revokeApprovals";
 import { stripeRoute } from "./routes/stripe/stripeRoute";
 import { swaggerDocs, swaggerDocsJSON } from "./routes/swagger";
 import { topUp } from "./routes/topUp";
+import { x402FinalizeRoute } from "./routes/x402Finalize";
+import { x402PaymentRoute } from "./routes/x402Payment";
+import { x402PriceRoute } from "./routes/x402Price";
 import { KoaContext } from "./server";
 
 const metricsRegistry = promClient.register;
@@ -127,6 +130,12 @@ router.get("/v1/refund-balance/:token/:signerAddress", refundBalance);
 router.get("/v1/check-balance/:token/:signerAddress", checkBalance);
 router.get("/v1/account/approvals/create", createApproval);
 router.get("/v1/account/approvals/revoke", revokeApprovals);
+
+// x402 Payment Routes
+router.get("/v1/x402/price/:signatureType/:address", x402PriceRoute);
+router.post("/v1/x402/payment/:signatureType/:address", x402PaymentRoute);
+router.post("/v1/x402/finalize", x402FinalizeRoute);
+
 // Health
 router.get("/health", async (ctx: KoaContext) => {
   ctx.body = "OK";

@@ -369,3 +369,82 @@ export const cryptoFundExcludedAddresses = process.env
   .CRYPTO_FUND_EXCLUDED_ADDRESSES
   ? process.env.CRYPTO_FUND_EXCLUDED_ADDRESSES.split(",")
   : [];
+
+// x402 Payment Configuration
+export const isX402Enabled = process.env.X402_ENABLED !== "false"; // Default: true
+
+export const x402PaymentModes = ["payg", "topup", "hybrid"] as const;
+export type X402PaymentMode = (typeof x402PaymentModes)[number];
+
+export const defaultX402PaymentMode: X402PaymentMode =
+  (process.env.X402_DEFAULT_MODE as X402PaymentMode) || "hybrid";
+
+// x402 network configurations
+export interface X402NetworkConfig {
+  chainId: number;
+  usdcAddress: string;
+  rpcUrl: string;
+  facilitatorUrl?: string;
+  enabled: boolean;
+  minConfirmations: number;
+}
+
+export const x402Networks: Record<string, X402NetworkConfig> = {
+  "base-mainnet": {
+    chainId: 8453,
+    usdcAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    rpcUrl: process.env.BASE_MAINNET_RPC_URL || "https://mainnet.base.org",
+    facilitatorUrl: process.env.X402_FACILITATOR_URL_BASE,
+    enabled: process.env.X402_BASE_ENABLED !== "false",
+    minConfirmations: +(process.env.X402_BASE_MIN_CONFIRMATIONS || 1),
+  },
+  "ethereum-mainnet": {
+    chainId: 1,
+    usdcAddress: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    rpcUrl:
+      process.env.ETHEREUM_MAINNET_RPC_URL || "https://cloudflare-eth.com/",
+    facilitatorUrl: process.env.X402_FACILITATOR_URL_ETH,
+    enabled: process.env.X402_ETH_ENABLED === "true", // Default: false (enable Base first)
+    minConfirmations: +(process.env.X402_ETH_MIN_CONFIRMATIONS || 3),
+  },
+  "polygon-mainnet": {
+    chainId: 137,
+    usdcAddress: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+    rpcUrl: process.env.POLYGON_MAINNET_RPC_URL || "https://polygon-rpc.com/",
+    facilitatorUrl: process.env.X402_FACILITATOR_URL_POLYGON,
+    enabled: process.env.X402_POLYGON_ENABLED === "true", // Default: false
+    minConfirmations: +(process.env.X402_POLYGON_MIN_CONFIRMATIONS || 10),
+  },
+  "base-sepolia": {
+    chainId: 84532,
+    usdcAddress: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+    rpcUrl: process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org",
+    facilitatorUrl: process.env.X402_FACILITATOR_URL_BASE_TESTNET,
+    enabled: process.env.X402_BASE_TESTNET_ENABLED === "true",
+    minConfirmations: 1,
+  },
+};
+
+export const x402PaymentAddress =
+  process.env.X402_PAYMENT_ADDRESS || process.env.X402_WALLET_ADDRESS;
+
+if (isX402Enabled && !x402PaymentAddress) {
+  throw new Error(
+    "X402_PAYMENT_ADDRESS or X402_WALLET_ADDRESS must be set when x402 is enabled"
+  );
+}
+
+// x402 payment validation timeout (5 minutes default)
+export const x402PaymentTimeoutMs = +(
+  process.env.X402_PAYMENT_TIMEOUT_MS ?? 300000
+);
+
+// x402 pricing buffer to account for price volatility (15% default)
+export const x402PricingBufferPercent = +(
+  process.env.X402_PRICING_BUFFER_PERCENT ?? 15
+);
+
+// x402 fraud detection tolerance (5% default)
+export const x402FraudTolerancePercent = +(
+  process.env.X402_FRAUD_TOLERANCE_PERCENT ?? 5
+);
