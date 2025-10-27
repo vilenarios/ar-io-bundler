@@ -241,15 +241,18 @@ export async function x402PaymentRoute(ctx: KoaContext, next: Next) {
       // Top-up: Credit entire amount to user's balance
       wincCredited = W(wincPaid);
 
-      const user = await paymentDatabase.getUser(address);
-      const newBalance = user.winstonCreditBalance.plus(wincCredited);
+      await paymentDatabase.adjustUserWinstonBalance({
+        userAddress: address,
+        userAddressType: addressType,
+        winstonAmount: wincCredited,
+        changeReason: "x402_topup",
+        changeId: payment.id,
+      });
 
-      // Update user balance (this should be done via a database method)
-      // For now, we'll log it - TODO: Implement proper balance update
-      logger.info("X402 top-up - would credit balance", {
+      logger.info("X402 top-up - credited balance", {
         address,
         wincCredited,
-        newBalance,
+        paymentId: payment.id,
       });
     } else {
       // Hybrid: Reserve for data item, credit excess
@@ -267,9 +270,18 @@ export async function x402PaymentRoute(ctx: KoaContext, next: Next) {
 
       if (W(wincCredited).gt(0)) {
         // Credit excess to balance
-        logger.info("X402 hybrid - would credit excess", {
+        await paymentDatabase.adjustUserWinstonBalance({
+          userAddress: address,
+          userAddressType: addressType,
+          winstonAmount: wincCredited,
+          changeReason: "x402_hybrid_excess",
+          changeId: payment.id,
+        });
+
+        logger.info("X402 hybrid - credited excess", {
           address,
           wincCredited,
+          paymentId: payment.id,
         });
       }
     }
