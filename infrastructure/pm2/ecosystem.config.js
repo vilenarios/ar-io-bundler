@@ -89,6 +89,10 @@ module.exports = {
         REDIS_PORT_QUEUES: "6381",
         DB_HOST: "localhost",
         DB_PORT: "5432",
+        // Optical bridge configuration (AR_IO_ADMIN_KEY loaded from .env via env_file)
+        OPTICAL_BRIDGING_ENABLED: "true",
+        OPTICAL_BRIDGE_URL: "http://localhost:4000/ar-io/admin/queue-data-item",
+        OPTIONAL_OPTICAL_BRIDGE_URLS: "http://192.168.2.235:4000/ar-io/admin/queue-data-item",
       },
       error_file: "/home/vilenarios/ar-io-bundler/logs/upload-workers-error.log",
       out_file: "/home/vilenarios/ar-io-bundler/logs/upload-workers-out.log",
