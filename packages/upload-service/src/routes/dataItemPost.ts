@@ -158,6 +158,7 @@ export async function dataItemRoute(ctx: KoaContext, next: Next) {
   }
 
   const paidBys: string[] = [];
+  let x402PaymentHeader: string | undefined;
   ctx.request.req.rawHeaders.forEach((header, index) => {
     if (header === "x-paid-by") {
       // get x-paid-by values from raw headers
@@ -170,8 +171,26 @@ export async function dataItemRoute(ctx: KoaContext, next: Next) {
         paidBys.push(...paidByAddresses);
       }
     }
+    if (header.toLowerCase() === "x-payment") {
+      // Extract x402 payment header
+      x402PaymentHeader = ctx.request.req.rawHeaders[index + 1];
+    }
   });
   const paidBy = paidBys.length > 0 ? paidBys : undefined;
+
+  // Track x402 payment state
+  let x402PaymentId: string | undefined;
+  let x402TxHash: string | undefined;
+  let x402Network: string | undefined;
+  let x402Mode: string | undefined;
+
+  // Validate x402 payment requirements
+  if (x402PaymentHeader && rawContentLength === undefined) {
+    return errorResponse(ctx, {
+      errorMessage:
+        "x402 payments require Content-Length header to be present",
+    });
+  }
 
   // Duplicate the request body stream. The original will go to the data item
   // event emitter. This one will go to the object store.
@@ -261,10 +280,55 @@ export async function dataItemRoute(ctx: KoaContext, next: Next) {
   );
   await markInFlight({ dataItemId, cacheService, logger });
 
-  // Reserve balance for this upload if the content-length header was present
+  // Handle payment: x402 or traditional balance check
   if (shouldSkipBalanceCheck) {
     logger.debug("Skipping balance check...");
+  } else if (x402PaymentHeader && rawContentLength !== undefined) {
+    // x402 payment flow
+    try {
+      logger.debug("Processing x402 payment...", {
+        dataItemId,
+        byteCount: rawContentLength,
+      });
+
+      const x402Result = await paymentService.verifyAndSettleX402Payment({
+        paymentHeader: x402PaymentHeader,
+        dataItemId,
+        byteCount: rawContentLength,
+        nativeAddress,
+        signatureType,
+        mode: "hybrid", // Default to hybrid mode
+      });
+
+      if (x402Result.success) {
+        logger.debug("x402 payment successful", {
+          paymentId: x402Result.paymentId,
+          txHash: x402Result.txHash,
+          network: x402Result.network,
+        });
+        x402PaymentId = x402Result.paymentId;
+        x402TxHash = x402Result.txHash;
+        x402Network = x402Result.network;
+        x402Mode = x402Result.mode;
+      } else {
+        await removeFromInFlight({ dataItemId, cacheService, logger });
+        errorResponse(ctx, {
+          status: 402,
+          errorMessage: x402Result.error || "x402 payment verification failed",
+        });
+        return next();
+      }
+    } catch (error) {
+      await removeFromInFlight({ dataItemId, cacheService, logger });
+      errorResponse(ctx, {
+        status: 503,
+        errorMessage: `Data Item: ${dataItemId}. x402 payment processing failed`,
+        error,
+      });
+      return next();
+    }
   } else if (rawContentLength !== undefined) {
+    // Traditional balance check flow
     let checkBalanceResponse: CheckBalanceResponse;
     try {
       logger.debug("Checking balance for upload...");
@@ -420,6 +484,54 @@ export async function dataItemRoute(ctx: KoaContext, next: Next) {
   const payloadDataByteCount = await streamingDataItem.getPayloadSize();
   const totalSize = payloadDataByteCount + payloadDataStart;
 
+  // Finalize x402 payment with actual byte count (fraud detection)
+  if (x402PaymentId) {
+    try {
+      logger.debug("Finalizing x402 payment with actual byte count", {
+        dataItemId,
+        declaredBytes: rawContentLength,
+        actualBytes: totalSize,
+      });
+
+      const finalizeResult = await paymentService.finalizeX402Payment({
+        dataItemId,
+        actualByteCount: totalSize,
+      });
+
+      if (finalizeResult.success) {
+        logger.info("x402 payment finalized", {
+          dataItemId,
+          status: finalizeResult.status,
+          actualBytes: totalSize,
+          refundWinc: finalizeResult.refundWinc,
+        });
+
+        // If fraud was detected, reject the upload
+        if (finalizeResult.status === "fraud_penalty") {
+          await removeFromInFlight({ dataItemId, cacheService, logger });
+          await performQuarantine({
+            status: 402,
+            errorMessage: `Fraud detected: declared ${rawContentLength} bytes but uploaded ${totalSize} bytes. Payment kept as penalty.`,
+          });
+          return next();
+        }
+      } else {
+        // Finalization failed - log warning but don't block upload
+        // The payment was already settled, so we'll allow the upload to proceed
+        logger.warn("x402 payment finalization failed", {
+          dataItemId,
+          error: finalizeResult.error,
+        });
+      }
+    } catch (error) {
+      // Finalization error - log but don't block upload since payment was already settled
+      logger.error("x402 payment finalization error", {
+        dataItemId,
+        error,
+      });
+    }
+  }
+
   if (totalSize > maxSingleDataItemByteCount) {
     await removeFromInFlight({ dataItemId, cacheService, logger });
     await performQuarantine({
@@ -467,6 +579,14 @@ export async function dataItemRoute(ctx: KoaContext, next: Next) {
     paymentResponse = {
       isReserved: true,
       costOfDataItem: W(0),
+      walletExists: true,
+    };
+  } else if (x402PaymentId) {
+    // x402 payment already verified and settled - skip traditional reservation
+    logger.debug("Using x402 payment - skipping traditional balance reservation");
+    paymentResponse = {
+      isReserved: true,
+      costOfDataItem: W(0), // Cost handled by x402
       walletExists: true,
     };
   } else {
@@ -783,6 +903,7 @@ export async function dataItemRoute(ctx: KoaContext, next: Next) {
     | string[]
     | DelegatedPaymentApproval
     | DelegatedPaymentApproval[]
+    | Record<string, string | undefined>
   > = {
     ...signedReceipt,
     owner: ownerPublicAddress,
@@ -797,6 +918,17 @@ export async function dataItemRoute(ctx: KoaContext, next: Next) {
     body = {
       ...body,
       revokedApprovals,
+    };
+  }
+  if (x402PaymentId) {
+    body = {
+      ...body,
+      x402Payment: {
+        paymentId: x402PaymentId,
+        txHash: x402TxHash,
+        network: x402Network,
+        mode: x402Mode,
+      },
     };
   }
   ctx.body = body;

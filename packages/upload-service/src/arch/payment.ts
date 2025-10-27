@@ -101,6 +101,63 @@ export interface RefundBalanceResponse {
   walletExists: boolean;
 }
 
+// x402 Payment Types
+export interface X402PaymentRequirements {
+  scheme: string;
+  network: string;
+  maxAmountRequired: string;
+  asset: string;
+  payTo: string;
+  timeout: { validBefore: number };
+  extra?: { name: string; version: string };
+}
+
+export interface X402PaymentRequiredResponse {
+  x402Version: number;
+  accepts: X402PaymentRequirements[];
+  error?: string;
+}
+
+export interface X402PaymentResult {
+  success: boolean;
+  paymentId?: string;
+  txHash?: string;
+  network?: string;
+  wincPaid?: Winston;
+  wincReserved?: Winston;
+  wincCredited?: Winston;
+  mode?: string;
+  error?: string;
+}
+
+export interface X402FinalizeResult {
+  success: boolean;
+  status?: string;
+  actualByteCount?: number;
+  refundWinc?: Winston;
+  error?: string;
+}
+
+interface GetX402PriceQuoteParams {
+  byteCount: ByteCount;
+  nativeAddress: NativeAddress;
+  signatureType: number;
+}
+
+interface VerifyAndSettleX402PaymentParams {
+  paymentHeader: string;
+  dataItemId: TransactionId;
+  byteCount: ByteCount;
+  nativeAddress: NativeAddress;
+  signatureType: number;
+  mode?: "payg" | "topup" | "hybrid";
+}
+
+interface FinalizeX402PaymentParams {
+  dataItemId: TransactionId;
+  actualByteCount: ByteCount;
+}
+
 interface RefundBalanceParams {
   winston: Winston;
   nativeAddress: NativeAddress;
@@ -124,6 +181,17 @@ export interface PaymentService {
   revokeDelegatedPaymentApprovals(
     params: RevokeDelegatedPaymentApprovalsParams
   ): Promise<DelegatedPaymentApproval[]>;
+
+  // x402 Payment Methods
+  getX402PriceQuote(
+    params: GetX402PriceQuoteParams
+  ): Promise<X402PaymentRequiredResponse | null>;
+  verifyAndSettleX402Payment(
+    params: VerifyAndSettleX402PaymentParams
+  ): Promise<X402PaymentResult>;
+  finalizeX402Payment(
+    params: FinalizeX402PaymentParams
+  ): Promise<X402FinalizeResult>;
 }
 
 const allowedReserveBalanceResponse: ReserveBalanceResponse = {
@@ -480,5 +548,208 @@ export class TurboPaymentService implements PaymentService {
     }
 
     return data;
+  }
+
+  // x402 Payment Methods
+
+  public async getX402PriceQuote({
+    byteCount,
+    nativeAddress,
+    signatureType,
+  }: GetX402PriceQuoteParams): Promise<X402PaymentRequiredResponse | null> {
+    const logger = this.logger.child({ nativeAddress, byteCount });
+
+    if (!this.paymentServiceURL) {
+      logger.debug("No payment service URL supplied. Cannot get x402 price quote.");
+      return null;
+    }
+
+    logger.debug("Getting x402 price quote from payment service...");
+
+    const url = new URL(
+      `${this.paymentServiceURL}/v1/x402/price/${signatureType}/${nativeAddress}`
+    );
+    url.searchParams.append("bytes", byteCount.toString());
+
+    const { status, statusText, data } = await this.axios.get<
+      X402PaymentRequiredResponse | string
+    >(url.href, {
+      validateStatus: (status) => {
+        if (status >= 500) {
+          throw new Error(`Payment service unavailable. Status: ${status}`);
+        }
+        return true;
+      },
+    });
+
+    logger.debug("Payment service x402 price response.", {
+      status,
+      statusText,
+    });
+
+    if (typeof data === "string") {
+      throw new Error(
+        `Payment service returned a string instead of a json object. Body: ${data} | Status: ${status} | StatusText: ${statusText}`
+      );
+    }
+
+    if (status !== 200) {
+      logger.warn("Failed to get x402 price quote", { status, statusText, data });
+      return null;
+    }
+
+    return data;
+  }
+
+  public async verifyAndSettleX402Payment({
+    paymentHeader,
+    dataItemId,
+    byteCount,
+    nativeAddress,
+    signatureType,
+    mode = "hybrid",
+  }: VerifyAndSettleX402PaymentParams): Promise<X402PaymentResult> {
+    const logger = this.logger.child({
+      nativeAddress,
+      dataItemId,
+      byteCount,
+      mode,
+    });
+
+    if (!this.paymentServiceURL) {
+      logger.error("No payment service URL supplied. Cannot verify x402 payment.");
+      return {
+        success: false,
+        error: "Payment service not configured",
+      };
+    }
+
+    logger.info("Verifying and settling x402 payment...");
+
+    try {
+      const { status, statusText, data } = await this.axios.post<
+        X402PaymentResult | string
+      >(
+        `${this.paymentServiceURL}/v1/x402/payment/${signatureType}/${nativeAddress}`,
+        {
+          paymentHeader,
+          dataItemId,
+          byteCount,
+          mode,
+        },
+        {
+          validateStatus: (status) => {
+            if (status >= 500) {
+              throw new Error(`Payment service unavailable. Status: ${status}`);
+            }
+            return true;
+          },
+        }
+      );
+
+      logger.debug("Payment service x402 payment response.", {
+        status,
+        statusText,
+      });
+
+      if (typeof data === "string") {
+        throw new Error(
+          `Payment service returned a string instead of a json object. Body: ${data} | Status: ${status} | StatusText: ${statusText}`
+        );
+      }
+
+      if (status === 402) {
+        // Payment required - signature verification failed
+        logger.warn("X402 payment verification failed", { data });
+        return {
+          success: false,
+          error: (data as any).error || "Payment verification failed",
+        };
+      }
+
+      if (status !== 200) {
+        logger.error("X402 payment failed", { status, statusText, data });
+        return {
+          success: false,
+          error: (data as any).error || `Payment failed: ${statusText}`,
+        };
+      }
+
+      logger.info("X402 payment successful", {
+        paymentId: (data as X402PaymentResult).paymentId,
+        txHash: (data as X402PaymentResult).txHash,
+      });
+
+      return data as X402PaymentResult;
+    } catch (error) {
+      logger.error("X402 payment error", { error });
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  }
+
+  public async finalizeX402Payment({
+    dataItemId,
+    actualByteCount,
+  }: FinalizeX402PaymentParams): Promise<X402FinalizeResult> {
+    const logger = this.logger.child({ dataItemId, actualByteCount });
+
+    if (!this.paymentServiceURL) {
+      logger.debug("No payment service URL supplied. Skipping x402 finalization.");
+      return { success: true }; // Not an error if payment service not configured
+    }
+
+    logger.debug("Finalizing x402 payment...");
+
+    try {
+      const { status, statusText, data } = await this.axios.post<
+        X402FinalizeResult | string
+      >(
+        `${this.paymentServiceURL}/v1/x402/finalize`,
+        {
+          dataItemId,
+          actualByteCount,
+        },
+        {
+          validateStatus: (status) => {
+            if (status >= 500) {
+              throw new Error(`Payment service unavailable. Status: ${status}`);
+            }
+            return true;
+          },
+        }
+      );
+
+      logger.debug("Payment service x402 finalize response.", {
+        status,
+        statusText,
+      });
+
+      if (typeof data === "string") {
+        throw new Error(
+          `Payment service returned a string instead of a json object. Body: ${data} | Status: ${status} | StatusText: ${statusText}`
+        );
+      }
+
+      if (status !== 200) {
+        logger.error("X402 finalization failed", { status, statusText, data });
+        return {
+          success: false,
+          error: (data as any).error || `Finalization failed: ${statusText}`,
+        };
+      }
+
+      logger.info("X402 payment finalized", { data });
+
+      return data as X402FinalizeResult;
+    } catch (error) {
+      logger.error("X402 finalization error", { error });
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
   }
 }
