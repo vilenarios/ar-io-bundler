@@ -2693,4 +2693,297 @@ export class PostgresDatabase implements Database {
       }
     }
   }
+
+  // x402 Payment Methods
+
+  async createX402Payment(
+    params: CreateX402PaymentParams
+  ): Promise<X402PaymentTransaction> {
+    const {
+      userAddress,
+      userAddressType,
+      txHash,
+      network,
+      tokenAddress,
+      usdcAmount,
+      wincAmount,
+      mode,
+      dataItemId,
+      declaredByteCount,
+      payerAddress,
+    } = params;
+
+    const id = randomUUID();
+    const now = new Date().toISOString();
+
+    const dbInsert: X402PaymentTransactionDBInsert = {
+      id,
+      user_address: userAddress,
+      user_address_type: userAddressType,
+      tx_hash: txHash,
+      network,
+      token_address: tokenAddress,
+      usdc_amount: usdcAmount,
+      winc_amount: wincAmount.toString(),
+      mode,
+      data_item_id: dataItemId,
+      declared_byte_count: declaredByteCount?.toString(),
+      status: "pending_validation",
+      paid_at: now,
+      payer_address: payerAddress,
+    };
+
+    await this.writer<X402PaymentTransactionDBResult>(
+      tableNames.x402PaymentTransaction
+    ).insert(dbInsert);
+
+    logger.info("Created x402 payment transaction", {
+      id,
+      txHash,
+      userAddress,
+      wincAmount,
+    });
+
+    return {
+      id,
+      userAddress,
+      userAddressType,
+      txHash,
+      network,
+      tokenAddress,
+      usdcAmount,
+      wincAmount,
+      mode,
+      dataItemId,
+      declaredByteCount: declaredByteCount
+        ? ByteCount(+declaredByteCount)
+        : undefined,
+      status: "pending_validation",
+      paidAt: now,
+      payerAddress,
+    };
+  }
+
+  async getX402Payment(
+    paymentId: string
+  ): Promise<X402PaymentTransaction | undefined> {
+    const result = await this.reader<X402PaymentTransactionDBResult>(
+      tableNames.x402PaymentTransaction
+    )
+      .where({ id: paymentId })
+      .first();
+
+    if (!result) {
+      return undefined;
+    }
+
+    return this.x402PaymentFromDbResult(result);
+  }
+
+  async getX402PaymentByTxHash(
+    txHash: string
+  ): Promise<X402PaymentTransaction | undefined> {
+    const result = await this.reader<X402PaymentTransactionDBResult>(
+      tableNames.x402PaymentTransaction
+    )
+      .where({ tx_hash: txHash })
+      .first();
+
+    if (!result) {
+      return undefined;
+    }
+
+    return this.x402PaymentFromDbResult(result);
+  }
+
+  async getX402PaymentByDataItemId(
+    dataItemId: DataItemId
+  ): Promise<X402PaymentTransaction | undefined> {
+    const result = await this.reader<X402PaymentTransactionDBResult>(
+      tableNames.x402PaymentTransaction
+    )
+      .where({ data_item_id: dataItemId })
+      .first();
+
+    if (!result) {
+      return undefined;
+    }
+
+    return this.x402PaymentFromDbResult(result);
+  }
+
+  async finalizeX402Payment(params: FinalizeX402PaymentParams): Promise<void> {
+    const { dataItemId, actualByteCount, status, refundWinc } = params;
+
+    // Get the payment transaction
+    const payment = await this.getX402PaymentByDataItemId(dataItemId);
+
+    if (!payment) {
+      throw new Error(`X402 payment not found for data item ${dataItemId}`);
+    }
+
+    await this.writer.transaction(async (knexTransaction) => {
+      // Update payment status
+      await knexTransaction<X402PaymentTransactionDBResult>(
+        tableNames.x402PaymentTransaction
+      )
+        .where({ id: payment.id })
+        .update({
+          actual_byte_count: actualByteCount.toString(),
+          status,
+          finalized_at: new Date().toISOString(),
+          refund_winc: refundWinc?.toString(),
+        });
+
+      // If refund, credit user's balance
+      if (refundWinc && W(refundWinc).gt(0)) {
+        const user = await this.getLockedUser(
+          payment.userAddress,
+          knexTransaction
+        );
+        const newBalance = user.winstonCreditBalance.plus(W(refundWinc));
+
+        await knexTransaction<UserDBResult>(tableNames.user)
+          .where({ user_address: payment.userAddress })
+          .update({ winston_credit_balance: newBalance.toString() });
+
+        // Add audit log entry
+        const auditLogInsert: AuditLogInsert = {
+          user_address: payment.userAddress,
+          winston_credit_amount: refundWinc.toString(),
+          change_reason: "x402_overpayment_refund",
+          change_id: dataItemId,
+        };
+        await knexTransaction(tableNames.auditLog).insert(auditLogInsert);
+      }
+
+      // If fraud penalty, add audit log
+      if (status === "fraud_penalty") {
+        const auditLogInsert: AuditLogInsert = {
+          user_address: payment.userAddress,
+          winston_credit_amount: "0",
+          change_reason: "x402_fraud_penalty",
+          change_id: dataItemId,
+        };
+        await knexTransaction(tableNames.auditLog).insert(auditLogInsert);
+      }
+
+      // Delete reservation
+      await knexTransaction<X402PaymentReservationDBResult>(
+        tableNames.x402PaymentReservation
+      )
+        .where({ data_item_id: dataItemId })
+        .del();
+    });
+
+    logger.info("Finalized x402 payment", {
+      dataItemId,
+      paymentId: payment.id,
+      status,
+      actualByteCount,
+      refundWinc,
+    });
+  }
+
+  async createX402PaymentReservation(params: {
+    dataItemId: DataItemId;
+    x402PaymentId: string;
+    wincReserved: WC;
+    expiresAt: string;
+  }): Promise<void> {
+    const { dataItemId, x402PaymentId, wincReserved, expiresAt } = params;
+
+    const dbInsert: X402PaymentReservationDBInsert = {
+      data_item_id: dataItemId,
+      x402_payment_id: x402PaymentId,
+      winc_reserved: wincReserved.toString(),
+      expires_at: expiresAt,
+    };
+
+    await this.writer<X402PaymentReservationDBResult>(
+      tableNames.x402PaymentReservation
+    ).insert(dbInsert);
+
+    logger.debug("Created x402 payment reservation", {
+      dataItemId,
+      x402PaymentId,
+      wincReserved,
+    });
+  }
+
+  async getX402PaymentReservation(
+    dataItemId: DataItemId
+  ): Promise<X402PaymentReservation | undefined> {
+    const result = await this.reader<X402PaymentReservationDBResult>(
+      tableNames.x402PaymentReservation
+    )
+      .where({ data_item_id: dataItemId })
+      .first();
+
+    if (!result) {
+      return undefined;
+    }
+
+    return {
+      dataItemId: result.data_item_id as DataItemId,
+      x402PaymentId: result.x402_payment_id,
+      wincReserved: W(result.winc_reserved),
+      createdAt: result.created_at,
+      expiresAt: result.expires_at,
+    };
+  }
+
+  async deleteX402PaymentReservation(dataItemId: DataItemId): Promise<void> {
+    await this.writer<X402PaymentReservationDBResult>(
+      tableNames.x402PaymentReservation
+    )
+      .where({ data_item_id: dataItemId })
+      .del();
+
+    logger.debug("Deleted x402 payment reservation", { dataItemId });
+  }
+
+  async cleanupExpiredX402Reservations(): Promise<number> {
+    const now = new Date().toISOString();
+
+    const deletedCount = await this.writer<X402PaymentReservationDBResult>(
+      tableNames.x402PaymentReservation
+    )
+      .where("expires_at", "<", now)
+      .del();
+
+    if (deletedCount > 0) {
+      logger.info("Cleaned up expired x402 reservations", { deletedCount });
+    }
+
+    return deletedCount;
+  }
+
+  private x402PaymentFromDbResult(
+    result: X402PaymentTransactionDBResult
+  ): X402PaymentTransaction {
+    return {
+      id: result.id,
+      userAddress: result.user_address,
+      userAddressType: result.user_address_type as UserAddressType,
+      txHash: result.tx_hash,
+      network: result.network,
+      tokenAddress: result.token_address,
+      usdcAmount: result.usdc_amount,
+      wincAmount: W(result.winc_amount),
+      mode: result.mode,
+      dataItemId: result.data_item_id as DataItemId | undefined,
+      declaredByteCount: result.declared_byte_count
+        ? ByteCount(+result.declared_byte_count)
+        : undefined,
+      actualByteCount: result.actual_byte_count
+        ? ByteCount(+result.actual_byte_count)
+        : undefined,
+      status: result.status,
+      paidAt: result.paid_at,
+      finalizedAt: result.finalized_at,
+      refundWinc: result.refund_winc ? W(result.refund_winc) : undefined,
+      payerAddress: result.payer_address,
+    };
+  }
 }

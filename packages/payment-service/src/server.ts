@@ -26,6 +26,7 @@ import {
   defaultPort,
   isGiftingEnabled,
   migrateOnStartup,
+  x402Networks,
 } from "./constants";
 import { PostgresDatabase } from "./database/postgres";
 import { MandrillEmailProvider } from "./emailProvider";
@@ -46,6 +47,7 @@ import { TurboPricingService } from "./pricing/pricing";
 import router from "./router";
 import { JWKInterface } from "./types/jwkTypes";
 import { loadSecretsToEnv } from "./utils/loadSecretsToEnv";
+import { X402Service } from "./x402/x402Service";
 
 type KoaState = DefaultState & Architecture & { logger: Logger };
 export type KoaContext = ParameterizedContext<KoaState>;
@@ -130,6 +132,9 @@ export async function createServer(
     }
     return new MandrillEmailProvider(MANDRILL_API_KEY, logger);
   })();
+
+  const x402Service = arch.x402Service ?? new X402Service(x402Networks);
+
   app.use((ctx: KoaContext, next: Next) =>
     architectureMiddleware(ctx, next, {
       pricingService,
@@ -137,6 +142,7 @@ export async function createServer(
       stripe,
       emailProvider,
       gatewayMap,
+      x402Service,
     })
   );
 
