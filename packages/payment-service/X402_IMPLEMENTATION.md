@@ -72,19 +72,19 @@ x402 is an open payments protocol that uses the HTTP 402 "Payment Required" stat
 - [x] Server initialization (`src/server.ts`)
 - [x] Router configuration (`src/router.ts`)
 
-### ⏳ Pending (Upload Service Integration)
+### ✅ Completed (Upload Service Integration)
 
 #### 1. **Upload Service Changes**
-- [ ] Add x402 payment support to `packages/upload-service/src/routes/dataItemPost.ts`
+- [x] Add x402 payment support to `packages/upload-service/src/routes/dataItemPost.ts`
   - Detect `X-PAYMENT` header
   - Call payment service x402 endpoints
   - Skip traditional balance check/reservation if paid via x402
-- [ ] Add fraud detection validation
+- [x] Add fraud detection validation
   - Compare actual vs declared Content-Length
   - Call finalize endpoint
-- [ ] Add payment service client methods (`src/arch/payment.ts`)
-  - checkBalanceForDataX402()
+- [x] Add payment service client methods (`src/arch/payment.ts`)
   - getX402PriceQuote()
+  - verifyAndSettleX402Payment()
   - finalizeX402Payment()
 
 #### 2. **Testing**
@@ -247,7 +247,51 @@ CRYPTO_MONITORING_ENABLED=true
 
 ## API Examples
 
-### Get Price Quote
+### Upload with x402 Payment
+
+**Request:**
+```http
+POST /v1/tx HTTP/1.1
+Content-Type: application/octet-stream
+Content-Length: 1048576
+X-PAYMENT: eyJ4NDAyVmVyc2lvbiI6MSwic2NoZW1lIjoiZXhhY3QiLCAuLi59
+
+[binary data item content]
+```
+
+**Successful Response:**
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "id": "xyz789",
+  "timestamp": 1735257600000,
+  "winc": "0",
+  "version": "1.0.0",
+  "deadlineHeight": 1234567,
+  "dataCaches": ["arweave.net"],
+  "fastFinalityIndexes": [],
+  "owner": "abc123",
+  "x402Payment": {
+    "paymentId": "uuid",
+    "txHash": "0x123...",
+    "network": "base-mainnet",
+    "mode": "hybrid"
+  }
+}
+```
+
+**Fraud Detected Response:**
+```http
+HTTP/1.1 402 Payment Required
+
+{
+  "error": "Fraud detected: declared 1048576 bytes but uploaded 2097152 bytes. Payment kept as penalty."
+}
+```
+
+### Get Price Quote (Payment Service)
 
 **Request:**
 ```http
