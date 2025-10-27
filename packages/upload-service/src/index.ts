@@ -14,6 +14,10 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+// Load .env file BEFORE importing anything else that uses process.env
+import { config } from "dotenv";
+config();
+
 import logger from "./logger";
 import { createServer } from "./server";
 

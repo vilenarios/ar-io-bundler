@@ -38,7 +38,7 @@ describe("x402 Upload Integration Tests", function () {
 
   before(async () => {
     paymentService = new TurboPaymentService({
-      url: "http://localhost:4000", // Mock payment service URL
+      url: "http://localhost:4001", // Payment service URL
     });
 
     server = await createServer({
@@ -50,8 +50,8 @@ describe("x402 Upload Integration Tests", function () {
     const validBefore = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
     const paymentPayload = {
       x402Version: 1,
-      scheme: "eip-3009",
-      network: "base-mainnet",
+      scheme: "exact",
+      network: "base-sepolia",
       payload: {
         signature: "0x" + "1234567890abcdef".repeat(8) + "12",
         authorization: {
@@ -78,7 +78,73 @@ describe("x402 Upload Integration Tests", function () {
     restore();
   });
 
-  describe("POST /v1/tx with X-PAYMENT header", () => {
+  describe("x402 Standard Compliance", () => {
+    it("returns 402 Payment Required on first request without X-PAYMENT or balance", async () => {
+      // Stub balance check to return insufficient balance
+      const checkBalanceStub = stub(
+        paymentService,
+        "checkBalanceForData"
+      ).resolves({
+        userHasSufficientBalance: false,
+        bytesCostInWinc: "100000",
+        userBalanceInWinc: "0",
+        userAddress: "test-address",
+      });
+
+      // Stub getX402PriceQuote to return payment requirements
+      const priceQuoteStub = stub(
+        paymentService,
+        "getX402PriceQuote"
+      ).resolves({
+        x402Version: 1,
+        accepts: [
+          {
+            scheme: "exact",
+            network: "base-sepolia",
+            maxAmountRequired: "1000000",
+            resource: "/v1/tx",
+            description: "Upload data to Arweave via AR.IO Bundler",
+            mimeType: "application/json",
+            payTo: "0x123...",
+            maxTimeoutSeconds: 300,
+            asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+            extra: { name: "USD Coin", version: "2" },
+          },
+        ],
+      });
+
+      const signer = new ArweaveSigner(testArweaveJWK);
+      const dataItem = createData("test data for 402 response", signer);
+      await dataItem.sign(signer);
+      const dataItemBuffer = dataItem.getRaw();
+
+      try {
+        await axios.post(`${localTestUrl}/v1/tx`, dataItemBuffer, {
+          headers: {
+            "Content-Type": octetStreamContentType,
+            "Content-Length": dataItemBuffer.length.toString(),
+            // No X-PAYMENT header
+          },
+          maxBodyLength: Infinity,
+          maxContentLength: Infinity,
+          validateStatus: () => true, // Don't throw on 402
+        });
+      } catch (error: any) {
+        // Expect 402 Payment Required
+        expect(error.response.status).to.equal(402);
+        expect(error.response.headers["x-payment-required"]).to.equal("x402-1");
+        expect(error.response.data).to.have.property("x402Version");
+        expect(error.response.data).to.have.property("accepts");
+        expect(error.response.data.accepts[0]).to.have.property("resource");
+        expect(error.response.data.accepts[0]).to.have.property("description");
+        expect(error.response.data.accepts[0]).to.have.property("mimeType");
+        expect(error.response.data.accepts[0]).to.have.property("maxTimeoutSeconds");
+      } finally {
+        checkBalanceStub.restore();
+        priceQuoteStub.restore();
+      }
+    });
+
     it("rejects upload without Content-Length when X-PAYMENT header is present", async () => {
       const signer = new ArweaveSigner(testArweaveJWK);
       const dataItem = createData("test data", signer);
@@ -138,7 +204,7 @@ describe("x402 Upload Integration Tests", function () {
       verifyStub.restore();
     });
 
-    it("includes x402 payment info in receipt on successful upload", async () => {
+    it("includes x402 payment info in receipt and X-Payment-Response header on successful upload", async () => {
       // Stub successful x402 payment
       const verifyStub = stub(
         paymentService,
@@ -147,7 +213,7 @@ describe("x402 Upload Integration Tests", function () {
         success: true,
         paymentId: "test-payment-id",
         txHash: "0xabcd1234",
-        network: "base-mainnet",
+        network: "base-sepolia",
         mode: "hybrid",
         wincReserved: "1000000",
       });
@@ -188,11 +254,23 @@ describe("x402 Upload Integration Tests", function () {
         expect(response.data).to.have.property("id");
         expect(response.data).to.have.property("x402Payment");
 
+        // Verify x402Payment in response body
         const x402Payment = response.data.x402Payment;
         expect(x402Payment).to.have.property("paymentId", "test-payment-id");
         expect(x402Payment).to.have.property("txHash", "0xabcd1234");
-        expect(x402Payment).to.have.property("network", "base-mainnet");
+        expect(x402Payment).to.have.property("network", "base-sepolia");
         expect(x402Payment).to.have.property("mode", "hybrid");
+
+        // Verify X-Payment-Response header (x402 standard)
+        expect(response.headers).to.have.property("x-payment-response");
+        const paymentResponseHeader = response.headers["x-payment-response"];
+        const decodedPaymentResponse = JSON.parse(
+          Buffer.from(paymentResponseHeader, "base64").toString("utf-8")
+        );
+        expect(decodedPaymentResponse).to.have.property("paymentId", "test-payment-id");
+        expect(decodedPaymentResponse).to.have.property("txHash", "0xabcd1234");
+        expect(decodedPaymentResponse).to.have.property("network", "base-sepolia");
+        expect(decodedPaymentResponse).to.have.property("mode", "hybrid");
       } catch (error: any) {
         // Log error for debugging
         logger.error("Test failed", { error: error.response?.data || error.message });

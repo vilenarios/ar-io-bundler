@@ -2,6 +2,28 @@
 
 Welcome to the Turbo Payment Service 👋
 
+## Overview
+
+The Turbo Payment Service handles payment processing, credit management, and blockchain payment gateway integrations for the AR.IO Bundler platform.
+
+### Supported Payment Methods
+
+- **x402 Protocol (Primary)**: HTTP 402 standard with USDC payments via EIP-3009 - See [examples/](../../examples/) for integration guides
+- **Cryptocurrency Payments**: Arweave, Ethereum, Solana, Matic/POL, KYVE, Base-ETH
+- **Stripe Payments**: Credit card processing for account top-ups
+- **Account Credits**: Balance-based payment system with reservations and refunds
+- **ArNS Purchases**: Arweave Name System integration
+
+### x402 Payment Protocol
+
+The service implements Coinbase's x402 standard as the primary payment method:
+
+- **GET /v1/x402/price/:signatureType/:address?bytes=N** - Get payment requirements (returns 402 Payment Required)
+- **POST /v1/x402/payment/:signatureType/:address** - Verify and settle x402 payment
+- **POST /v1/x402/finalize** - Finalize payment with fraud detection
+
+For implementation details and examples, see [examples/README.md](../../examples/README.md).
+
 ## Local Development
 
 ### Requirements

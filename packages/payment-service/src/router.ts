@@ -49,7 +49,7 @@ import { KoaContext } from "./server";
 const metricsRegistry = promClient.register;
 promClient.collectDefaultMetrics({ register: metricsRegistry });
 
-const router = new Router();
+const router = new Router() as any;
 
 /**
  * Note: when we return next(); in our handlers we are telling koa to continue to the next route handler. if any routes having matching paths, then BOTH handlers will be called, which may not be desired.
@@ -99,13 +99,13 @@ router.get("/v1/rates/:currency", fiatToArRateHandler);
 router.get(["/info", "/v1/info", "/", "/v1"], rootResponse);
 
 // routes for existing ecosystem compatibility
-router.get("/account/balance/:token", (ctx) => {
+router.get("/account/balance/:token", (ctx: KoaContext) => {
   // on /account/*, we will temporarily stub balance requests
   ctx.body = "99999999999999999999999999999999999999";
   return;
 });
 
-router.get("/account/balance", (ctx) => {
+router.get("/account/balance", (ctx: KoaContext) => {
   // on /account/*, we will temporarily stub balance requests
   ctx.body = "99999999999999999999999999999999999999";
   return;

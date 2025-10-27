@@ -20,7 +20,7 @@ import path from "path";
 import winston from "winston";
 
 import globalLogger from "../logger";
-import { TransactionId, W, WC, Winston } from "../types";
+import { ByteCount, TransactionId, W, WC, Winston } from "../types";
 import { remainingWincAmountFromApprovals } from "../utils/common";
 import { Database, WincUsedForUploadAdjustmentParams } from "./database";
 import { columnNames, tableNames } from "./dbConstants";
@@ -120,6 +120,14 @@ import {
   UserDBResult,
   isCreditedPaymentTransactionDBResult,
   isFailedPaymentTransactionDBResult,
+  X402PaymentTransaction,
+  X402PaymentTransactionDBInsert,
+  X402PaymentTransactionDBResult,
+  X402PaymentReservation,
+  X402PaymentReservationDBInsert,
+  X402PaymentReservationDBResult,
+  CreateX402PaymentParams,
+  FinalizeX402PaymentParams,
 } from "./dbTypes";
 import {
   ArNSPurchaseAlreadyExists,
@@ -2737,7 +2745,7 @@ export class PostgresDatabase implements Database {
       tableNames.x402PaymentTransaction
     ).insert(dbInsert);
 
-    logger.info("Created x402 payment transaction", {
+    globalLogger.info("Created x402 payment transaction", {
       id,
       txHash,
       userAddress,
@@ -2836,12 +2844,12 @@ export class PostgresDatabase implements Database {
         });
 
       // If refund, credit user's balance
-      if (refundWinc && W(refundWinc).gt(0)) {
+      if (refundWinc && refundWinc.isGreaterThan(W(0))) {
         const user = await this.getLockedUser(
           payment.userAddress,
           knexTransaction
         );
-        const newBalance = user.winstonCreditBalance.plus(W(refundWinc));
+        const newBalance = user.winstonCreditBalance.plus(refundWinc);
 
         await knexTransaction<UserDBResult>(tableNames.user)
           .where({ user_address: payment.userAddress })
@@ -2876,7 +2884,7 @@ export class PostgresDatabase implements Database {
         .del();
     });
 
-    logger.info("Finalized x402 payment", {
+    this.log.info("Finalized x402 payment", {
       dataItemId,
       paymentId: payment.id,
       status,
@@ -2904,7 +2912,7 @@ export class PostgresDatabase implements Database {
       tableNames.x402PaymentReservation
     ).insert(dbInsert);
 
-    logger.debug("Created x402 payment reservation", {
+    this.log.debug("Created x402 payment reservation", {
       dataItemId,
       x402PaymentId,
       wincReserved,
@@ -2940,7 +2948,73 @@ export class PostgresDatabase implements Database {
       .where({ data_item_id: dataItemId })
       .del();
 
-    logger.debug("Deleted x402 payment reservation", { dataItemId });
+    this.log.debug("Deleted x402 payment reservation", { dataItemId });
+  }
+
+  async adjustUserWinstonBalance(params: {
+    userAddress: UserAddress;
+    userAddressType: UserAddressType;
+    winstonAmount: Winston;
+    changeReason: AuditChangeReason;
+    changeId: string;
+  }): Promise<void> {
+    const { userAddress, userAddressType, winstonAmount, changeReason, changeId } = params;
+
+    await this.writer.transaction(async (knexTransaction) => {
+      // Try to get existing user
+      const existingUser = await knexTransaction<UserDBResult>(tableNames.user)
+        .where({ user_address: userAddress })
+        .forUpdate()
+        .first();
+
+      if (existingUser === undefined) {
+        // Create new user with initial balance
+        this.log.debug("Creating new user with x402 balance", {
+          userAddress,
+          initialBalance: winstonAmount.toString(),
+          changeReason,
+        });
+
+        const userDbInsert: UserDBInsert = {
+          user_address: userAddress,
+          user_address_type: userAddressType,
+          winston_credit_balance: winstonAmount.toString(),
+        };
+        await knexTransaction<UserDBResult>(tableNames.user).insert(userDbInsert);
+
+        const auditLogInsert: AuditLogInsert = {
+          user_address: userAddress,
+          winston_credit_amount: winstonAmount.toString(),
+          change_reason: changeReason,
+          change_id: changeId,
+        };
+        await knexTransaction(tableNames.auditLog).insert(auditLogInsert);
+      } else {
+        // Update existing user's balance
+        const currentBalance = W(existingUser.winston_credit_balance);
+        const newBalance = currentBalance.plus(winstonAmount);
+
+        this.log.debug("Adjusting user balance for x402", {
+          userAddress,
+          currentBalance: currentBalance.toString(),
+          adjustment: winstonAmount.toString(),
+          newBalance: newBalance.toString(),
+          changeReason,
+        });
+
+        await knexTransaction<UserDBResult>(tableNames.user)
+          .where({ user_address: userAddress })
+          .update({ winston_credit_balance: newBalance.toString() });
+
+        const auditLogInsert: AuditLogInsert = {
+          user_address: userAddress,
+          winston_credit_amount: winstonAmount.toString(),
+          change_reason: changeReason,
+          change_id: changeId,
+        };
+        await knexTransaction(tableNames.auditLog).insert(auditLogInsert);
+      }
+    });
   }
 
   async cleanupExpiredX402Reservations(): Promise<number> {
@@ -2953,7 +3027,7 @@ export class PostgresDatabase implements Database {
       .del();
 
     if (deletedCount > 0) {
-      logger.info("Cleaned up expired x402 reservations", { deletedCount });
+      this.log.info("Cleaned up expired x402 reservations", { deletedCount });
     }
 
     return deletedCount;

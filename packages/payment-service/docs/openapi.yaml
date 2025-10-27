@@ -13,6 +13,8 @@ tags:
     description: Account balance and credit management
   - name: Payments
     description: Payment processing and top-up operations
+  - name: x402
+    description: x402 protocol payment endpoints (EIP-3009 USDC payments)
   - name: Currencies
     description: Supported currencies and exchange rates
   - name: Redemption
@@ -333,6 +335,146 @@ components:
             type: string
             description: The date and time the approval expires
             example: 2023-05-17T21:46:38.404Z
+
+    X402PaymentRequirements:
+      type: object
+      description: x402 payment requirements returned in 402 Payment Required response
+      properties:
+        scheme:
+          type: string
+          description: The payment scheme (e.g., exact for EIP-3009)
+          example: exact
+        network:
+          type: string
+          description: The blockchain network identifier
+          example: base-mainnet
+        maxAmountRequired:
+          type: string
+          description: Maximum payment amount required in USDC atomic units (6 decimals)
+          example: "1000000"
+        resource:
+          type: string
+          description: The resource URL being paid for
+          example: "/v1/tx"
+        description:
+          type: string
+          description: Human-readable description of the resource
+          example: "Upload data to Arweave via AR.IO Bundler"
+        mimeType:
+          type: string
+          description: MIME type of the resource response
+          example: "application/json"
+        outputSchema:
+          type: object
+          description: JSON schema describing the resource response structure
+        payTo:
+          type: string
+          description: The recipient address for the payment
+          example: "0x6A0A10FFD285c971B841bee8892878c0d583Bf67"
+        maxTimeoutSeconds:
+          type: integer
+          description: Maximum time in seconds to complete the payment
+          example: 300
+        asset:
+          type: string
+          description: EIP-3009 compliant USDC contract address
+          example: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+        extra:
+          type: object
+          description: Additional metadata about the payment asset
+          properties:
+            name:
+              type: string
+              example: "USD Coin"
+            version:
+              type: string
+              example: "2"
+
+    X402PaymentRequiredResponse:
+      type: object
+      description: 402 Payment Required response with x402 payment options
+      properties:
+        x402Version:
+          type: integer
+          description: x402 protocol version
+          example: 1
+        accepts:
+          type: array
+          description: Array of accepted payment methods
+          items:
+            $ref: "#/components/schemas/X402PaymentRequirements"
+        error:
+          type: string
+          description: Optional error message if price quote cannot be generated
+          example: "Insufficient balance"
+
+    X402PaymentResult:
+      type: object
+      description: Result of x402 payment verification and settlement
+      properties:
+        success:
+          type: boolean
+          description: Whether the payment was successfully verified and settled
+          example: true
+        paymentId:
+          type: string
+          description: Unique identifier for this payment transaction
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        txHash:
+          type: string
+          description: Blockchain transaction hash (for on-chain verification)
+          example: "0xabc123..."
+        network:
+          type: string
+          description: Network where payment was made
+          example: "base-mainnet"
+        wincPaid:
+          type: string
+          description: Amount of winc paid/deducted
+          example: "1000000"
+        wincReserved:
+          type: string
+          description: Amount of winc reserved for this upload
+          example: "1000000"
+        wincCredited:
+          type: string
+          description: Amount of winc credited to account (for topup mode)
+          example: "950000"
+        mode:
+          type: string
+          description: Payment mode used
+          enum: [payg, topup, hybrid]
+          example: "hybrid"
+        error:
+          type: string
+          description: Error message if success is false
+          example: "Invalid payment signature"
+
+    X402FinalizeResult:
+      type: object
+      description: Result of x402 payment finalization after actual upload size is known
+      properties:
+        success:
+          type: boolean
+          description: Whether finalization succeeded
+          example: true
+        status:
+          type: string
+          description: Finalization status
+          enum: [confirmed, overpaid_refund, fraud_penalty]
+          example: "confirmed"
+        actualByteCount:
+          type: integer
+          description: The actual byte count of the uploaded data item
+          example: 1024
+        refundWinc:
+          type: string
+          description: Amount of winc refunded if actual size was less than declared
+          example: "50000"
+        error:
+          type: string
+          description: Error message if success is false
+          example: "Payment not found"
 
 paths:
   # winc Price for ByteCount of Data Items
@@ -1008,6 +1150,203 @@ paths:
               schema:
                 type: string
                 default: "Internal server error"
+
+  /x402/price/{signatureType}/{address}:
+    get:
+      tags:
+        - x402
+      summary: Get x402 payment requirements for upload
+      description: Returns a 402 Payment Required response with EIP-3009 payment requirements for uploading data of a given size. This is the first step in the x402 payment flow.
+
+      parameters:
+        - name: signatureType
+          in: path
+          required: true
+          schema:
+            type: integer
+            description: Signature type (1=Arweave, 3=Ethereum, 4=Solana, etc.)
+            example: 3
+
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+            description: User's wallet address
+            example: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+
+        - name: bytes
+          in: query
+          required: true
+          schema:
+            type: integer
+            description: Number of bytes to upload
+            example: 1024
+
+      responses:
+        "402":
+          description: Payment Required - Returns x402 payment requirements
+          headers:
+            X-Payment-Required:
+              schema:
+                type: string
+              description: x402 protocol version
+              example: "x402-1"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/X402PaymentRequiredResponse"
+
+        "400":
+          description: Bad Request
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Invalid byte count"
+
+        "503":
+          description: Service Unavailable
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Pricing oracle unavailable"
+
+  /x402/payment/{signatureType}/{address}:
+    post:
+      tags:
+        - x402
+      summary: Verify and settle x402 payment
+      description: Verifies an EIP-3009 payment authorization and settles payment according to the specified mode (payg, topup, or hybrid)
+
+      parameters:
+        - name: signatureType
+          in: path
+          required: true
+          schema:
+            type: integer
+            description: Signature type (1=Arweave, 3=Ethereum, 4=Solana, etc.)
+            example: 3
+
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+            description: User's wallet address
+            example: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - paymentHeader
+                - dataItemId
+                - byteCount
+              properties:
+                paymentHeader:
+                  type: string
+                  description: Base64-encoded x402 payment authorization (EIP-3009 signature)
+                  example: "eyJ4NDAyVmVyc2lvbiI6MSwic2NoZW1lIjoiZWlwLTMwMDkiLCJuZXR3b3JrIjoiYmFzZS1tYWlubmV0IiwicGF5bG9hZCI6ey4uLn19"
+                dataItemId:
+                  type: string
+                  description: Data item ID being uploaded
+                  example: "QpmY8mZmFEC8RxNsgbxSV6e36OF6quIYaPRKzvUco0o"
+                byteCount:
+                  type: integer
+                  description: Declared byte count for the upload
+                  example: 1024
+                mode:
+                  type: string
+                  description: Payment mode
+                  enum: [payg, topup, hybrid]
+                  default: hybrid
+                  example: "hybrid"
+
+      responses:
+        "200":
+          description: Payment verified and settled successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/X402PaymentResult"
+
+        "402":
+          description: Payment verification failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/X402PaymentResult"
+
+        "400":
+          description: Bad Request
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Invalid payment header"
+
+        "503":
+          description: Service Unavailable
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Payment service unavailable"
+
+  /x402/finalize:
+    post:
+      tags:
+        - x402
+      summary: Finalize x402 payment after upload
+      description: Called by upload service after data item is fully received to compare actual vs declared byte count and detect fraud
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - dataItemId
+                - actualByteCount
+              properties:
+                dataItemId:
+                  type: string
+                  description: Data item ID that was uploaded
+                  example: "QpmY8mZmFEC8RxNsgbxSV6e36OF6quIYaPRKzvUco0o"
+                actualByteCount:
+                  type: integer
+                  description: Actual byte count after upload completed
+                  example: 1024
+
+      responses:
+        "200":
+          description: Payment finalized successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/X402FinalizeResult"
+
+        "404":
+          description: Payment not found
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Payment not found for data item"
+
+        "503":
+          description: Service Unavailable
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Payment service unavailable"
 
   /info:
     get:

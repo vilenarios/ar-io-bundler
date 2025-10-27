@@ -89,6 +89,12 @@ export class PaymentAmountTooLarge extends PaymentValidationError {
   }
 }
 
+export class X402PaymentError extends PaymentValidationError {
+  constructor(message: string) {
+    super(message);
+  }
+}
+
 export abstract class PromoCodeError extends BaseError {}
 
 export class UserIneligibleForPromoCode extends PromoCodeError {

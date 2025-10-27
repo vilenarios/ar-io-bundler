@@ -126,6 +126,10 @@ Two background job processors:
 
 **Routes (src/routes/)**
 Key route categories:
+- **x402 Payment Protocol (Primary)**: `/v1/x402/*` - HTTP 402 standard with USDC
+  - `GET /v1/x402/price/:signatureType/:address?bytes=N` - Returns 402 with payment requirements
+  - `POST /v1/x402/payment/:signatureType/:address` - Verify and settle x402 payment
+  - `POST /v1/x402/finalize` - Finalize payment with fraud detection
 - Price calculation: `/v1/price/*`, `/v1/arns/price/*`
 - Balance operations: `/v1/balance`, `/v1/reserve-balance`, `/v1/refund-balance`
 - Payments: `/v1/top-up`, `/v1/redeem`, `/v1/stripe-webhook`
@@ -158,6 +162,55 @@ Key route categories:
 3. Status check: `GET /v1/arns/purchase/:nonce`
 4. Stripe payment flow or crypto payment flow
 5. On success: interact with ARIOGateway to complete ArNS registration
+
+### x402 Payment Protocol (Primary Flow)
+
+The service implements Coinbase's x402 standard as the primary payment method:
+
+**Three-Phase Flow:**
+
+**Phase 1: Price Quote (GET /v1/x402/price/:signatureType/:address?bytes=N)**
+- Returns 402 Payment Required (NOT 200!)
+- Headers: `X-Payment-Required: x402-1`
+- Response includes PaymentRequirements with all required fields:
+  - `scheme`: "exact" (EIP-3009 payment scheme)
+  - `network`: "base-sepolia", "base-mainnet", etc.
+  - `maxAmountRequired`: USDC amount in smallest unit (6 decimals)
+  - `resource`: "/v1/tx" (the upload endpoint)
+  - `description`: Human-readable payment description
+  - `mimeType`: "application/json"
+  - `payTo`: Recipient Ethereum address
+  - `maxTimeoutSeconds`: Payment authorization timeout
+  - `asset`: USDC contract address
+  - `extra`: { name: "USD Coin", version: "2" }
+
+**Phase 2: Verify and Settle (POST /v1/x402/payment/:signatureType/:address)**
+- Validates X-PAYMENT header (base64 JSON with EIP-712 signature)
+- Verifies EIP-3009 authorization signature
+- Calls USDC contract's `receiveWithAuthorization()` or simulates transfer
+- Returns payment result with paymentId, txHash, network, mode
+
+**Phase 3: Finalize (POST /v1/x402/finalize)**
+- Fraud detection: compares declared byteCount vs actual data item size
+- Refunds or penalizes based on discrepancy
+- Returns finalization status
+
+**Implementation Files:**
+- `src/routes/x402Price.ts` - 402 responses with payment requirements
+- `src/routes/x402Payment.ts` - Payment verification and settlement
+- `src/routes/x402Finalize.ts` - Fraud detection and finalization
+- `src/x402/x402Service.ts` - Type definitions and interfaces
+- `src/pricing/x402PricingOracle.ts` - AR → USD → USDC conversion
+
+**Payment Modes:**
+- `payg`: Pay-as-you-go (payment covers only this upload)
+- `topup`: Credit account balance (payment adds to user credits)
+- `hybrid`: Pay for upload + excess tops up balance (DEFAULT)
+
+**Standards:**
+- x402 Protocol: https://github.com/coinbase/x402
+- EIP-3009: TransferWithAuthorization (gasless USDC transfers)
+- EIP-712: Typed structured data signing
 
 ## Important Implementation Notes
 

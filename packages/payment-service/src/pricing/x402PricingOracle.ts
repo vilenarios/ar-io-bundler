@@ -18,7 +18,7 @@ import axios from "axios";
 
 import { oneARInWinston } from "../constants";
 import logger from "../logger";
-import { Winston } from "../types";
+import { W, Winston } from "../types";
 
 const USDC_DECIMALS = 6; // USDC has 6 decimals
 const COINGECKO_API_URL = "https://api.coingecko.com/api/v3/simple/price";
@@ -74,17 +74,18 @@ export class X402PricingOracle {
     const ar = usd / arPriceUSD;
 
     // 4. Convert AR to Winston
-    const winston = Math.floor(ar * oneARInWinston).toString();
+    const winstonStr = Math.floor(ar * oneARInWinston).toString();
+    const winston = W(winstonStr);
 
     logger.debug("USDC to Winston conversion", {
       usdcAtomicUnits: usdc,
       usd,
       arPriceUSD,
       ar,
-      winston,
+      winston: winstonStr,
     });
 
-    return winston as Winston;
+    return winston;
   }
 
   /**

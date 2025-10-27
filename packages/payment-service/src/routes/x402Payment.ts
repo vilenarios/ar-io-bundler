@@ -14,7 +14,6 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-import { randomUUID } from "crypto";
 import { Next } from "koa";
 
 import {
@@ -24,7 +23,7 @@ import {
   x402PricingBufferPercent,
 } from "../constants";
 import { DataItemId, UserAddressType, X402PaymentMode } from "../database/dbTypes";
-import { PaymentValidationError } from "../database/errors";
+import { X402PaymentError } from "../database/errors";
 import { X402PricingOracle } from "../pricing/x402PricingOracle";
 import { KoaContext } from "../server";
 import { ByteCount } from "../types/byteCount";
@@ -44,7 +43,7 @@ export async function x402PaymentRoute(ctx: KoaContext, next: Next) {
     dataItemId,
     byteCount: byteCountParam,
     mode: modeParam,
-  } = ctx.request.body as {
+  } = (ctx.request as any).body as {
     paymentHeader: string;
     dataItemId?: string;
     byteCount?: number;
@@ -53,7 +52,7 @@ export async function x402PaymentRoute(ctx: KoaContext, next: Next) {
 
   // Validate parameters
   if (!paymentHeader || typeof paymentHeader !== "string") {
-    throw new PaymentValidationError("Missing or invalid paymentHeader");
+    throw new X402PaymentError("Missing or invalid paymentHeader");
   }
 
   const mode: X402PaymentMode =
@@ -63,7 +62,7 @@ export async function x402PaymentRoute(ctx: KoaContext, next: Next) {
 
   // Validate mode-specific requirements
   if ((mode === "payg" || mode === "hybrid") && (!dataItemId || !byteCountParam)) {
-    throw new PaymentValidationError(
+    throw new X402PaymentError(
       "dataItemId and byteCount are required for PAYG and hybrid modes"
     );
   }
@@ -211,7 +210,7 @@ export async function x402PaymentRoute(ctx: KoaContext, next: Next) {
       network,
       tokenAddress,
       usdcAmount: authorization.value,
-      wincAmount: W(wincPaid),
+      wincAmount: wincPaid,
       mode,
       dataItemId: dataItemId as DataItemId | undefined,
       declaredByteCount: byteCount,
@@ -239,7 +238,7 @@ export async function x402PaymentRoute(ctx: KoaContext, next: Next) {
       });
     } else if (mode === "topup") {
       // Top-up: Credit entire amount to user's balance
-      wincCredited = W(wincPaid);
+      wincCredited = wincPaid;
 
       await paymentDatabase.adjustUserWinstonBalance({
         userAddress: address,
@@ -257,9 +256,9 @@ export async function x402PaymentRoute(ctx: KoaContext, next: Next) {
     } else {
       // Hybrid: Reserve for data item, credit excess
       wincReserved = winstonCost;
-      wincCredited = W(wincPaid).minus(winstonCost);
+      wincCredited = wincPaid.minus(winstonCost);
 
-      if (W(wincReserved).gt(0)) {
+      if (wincReserved.isGreaterThan(W(0))) {
         await paymentDatabase.createX402PaymentReservation({
           dataItemId: dataItemId as DataItemId,
           x402PaymentId: payment.id,
@@ -268,7 +267,7 @@ export async function x402PaymentRoute(ctx: KoaContext, next: Next) {
         });
       }
 
-      if (W(wincCredited).gt(0)) {
+      if (wincCredited.isGreaterThan(W(0))) {
         // Credit excess to balance
         await paymentDatabase.adjustUserWinstonBalance({
           userAddress: address,

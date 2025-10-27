@@ -123,12 +123,40 @@ Storage keys follow patterns like `${uploadId}/${chunkIndex}` for multipart uplo
 ### Payment Service Integration
 
 The `PaymentService` interface (src/arch/payment.ts) integrates with turbo-payment-service for:
-- Balance checks and reservations
+- **x402 Protocol Support**: Primary payment flow using HTTP 402 with USDC (EIP-3009)
+  - `getX402PriceQuote()`: Returns 402 Payment Required with payment requirements
+  - `verifyAndSettleX402Payment()`: Validates and settles x402 USDC payments
+  - `finalizeX402Payment()`: Fraud detection comparing declared vs actual byte count
+- Balance checks and reservations (traditional flow)
 - Credit adjustments on upload
 - Free upload allowlist validation
 - JWT token signing for inter-service auth
 
 Uses circuit breaker pattern (via opossum) for resilience.
+
+### x402 Payment Protocol (Primary Flow)
+
+The service implements Coinbase's x402 standard as the primary payment method for uploads:
+
+**Flow:**
+1. Client uploads without X-PAYMENT header → Server returns 402 Payment Required
+2. 402 response includes payment requirements (USDC amount, contract, recipient, timeout)
+3. Client creates EIP-3009 payment authorization and signs with EIP-712
+4. Client retries upload with `X-PAYMENT` header (base64 JSON with signature)
+5. Server verifies payment, settles USDC transfer, processes upload
+6. Server returns receipt with `x402Payment` object and `X-Payment-Response` header
+
+**Key Headers:**
+- `X-Payment-Required: x402-1` - Set on 402 responses
+- `X-PAYMENT` - Client sends payment authorization (required with Content-Length)
+- `X-Payment-Response` - Server returns payment confirmation (base64 JSON)
+
+**Implementation:** See `src/routes/dataItemPost.ts:330-398` (402 response) and `:961-986` (payment response header)
+
+**Standards:**
+- x402 Protocol: https://github.com/coinbase/x402
+- EIP-3009: TransferWithAuthorization for gasless USDC transfers
+- ANS-104: Arweave data item signing (signatureType 3 for Ethereum wallets)
 
 ## Testing Strategy
 

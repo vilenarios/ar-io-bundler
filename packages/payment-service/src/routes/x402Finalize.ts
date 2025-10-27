@@ -18,7 +18,7 @@ import { Next } from "koa";
 
 import { x402FraudTolerancePercent } from "../constants";
 import { DataItemId, X402PaymentStatus } from "../database/dbTypes";
-import { PaymentValidationError } from "../database/errors";
+import { X402PaymentError } from "../database/errors";
 import { KoaContext } from "../server";
 import { ByteCount } from "../types/byteCount";
 import { W } from "../types/winston";
@@ -34,14 +34,14 @@ export async function x402FinalizeRoute(ctx: KoaContext, next: Next) {
   const {
     dataItemId,
     actualByteCount: actualByteCountParam,
-  } = ctx.request.body as {
+  } = (ctx.request as any).body as {
     dataItemId: string;
     actualByteCount: number;
   };
 
   // Validate parameters
   if (!dataItemId || !actualByteCountParam) {
-    throw new PaymentValidationError(
+    throw new X402PaymentError(
       "Missing dataItemId or actualByteCount"
     );
   }
@@ -77,14 +77,14 @@ export async function x402FinalizeRoute(ctx: KoaContext, next: Next) {
     const tolerancePercent = x402FraudTolerancePercent / 100;
 
     // Calculate tolerance bounds
-    const lowerBound = declaredByteCount * (1 - tolerancePercent);
-    const upperBound = declaredByteCount * (1 + tolerancePercent);
+    const lowerBound = declaredByteCount.valueOf() * (1 - tolerancePercent);
+    const upperBound = declaredByteCount.valueOf() * (1 + tolerancePercent);
 
     let status: X402PaymentStatus;
     let refundWinc = W("0");
 
     // Fraud detection: actual > declared by more than tolerance
-    if (actualByteCount > upperBound) {
+    if (actualByteCount.valueOf() > upperBound) {
       status = "fraud_penalty";
       logger.warn("X402 fraud detected - keeping payment as penalty", {
         dataItemId,
@@ -95,12 +95,12 @@ export async function x402FinalizeRoute(ctx: KoaContext, next: Next) {
       });
     }
     // Overpayment: actual < declared by more than tolerance
-    else if (actualByteCount < lowerBound) {
+    else if (actualByteCount.valueOf() < lowerBound) {
       status = "refunded";
 
       // Calculate the actual cost based on actual bytes
       // TODO: Get actual pricing - for now, proportional refund
-      const overpaymentRatio = 1 - actualByteCount / declaredByteCount;
+      const overpaymentRatio = 1 - actualByteCount.valueOf() / declaredByteCount.valueOf();
       refundWinc = W(
         Math.floor(Number(payment.wincAmount) * overpaymentRatio).toString()
       );
@@ -127,7 +127,7 @@ export async function x402FinalizeRoute(ctx: KoaContext, next: Next) {
       dataItemId: dataItemId as DataItemId,
       actualByteCount,
       status,
-      refundWinc: W(refundWinc).gt(0) ? refundWinc : undefined,
+      refundWinc: refundWinc.isGreaterThan(W(0)) ? refundWinc : undefined,
     });
 
     logger.info("X402 payment finalized", {

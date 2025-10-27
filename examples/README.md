@@ -1,111 +1,189 @@
-# x402 Upload Examples
+# AR.IO Bundler x402 Upload Examples
 
-This directory contains examples demonstrating how to upload files to AR.IO Bundler using Coinbase's x402 payment protocol with USDC stablecoins.
+This directory contains production-ready examples for uploading files to AR.IO Bundler using Coinbase's **x402 payment protocol** with USDC stablecoins.
 
 ## Overview
 
-The x402 protocol enables HTTP-native payments using USDC on EVM chains (Base, Ethereum, Polygon). These examples show how to:
+The x402 protocol enables HTTP-native, pay-as-you-go payments using USDC on EVM chains (Base, Ethereum, Polygon). Upload files to Arweave without pre-loading credits—just pay with USDC as you upload.
 
-1. Get a price quote for an upload (in USDC)
-2. Create an EIP-3009 USDC transfer authorization
-3. Sign it with EIP-712
-4. Upload a file with the x402 payment
+### How It Works
+
+1. **Get Price Quote** - Request upload cost in USDC from payment service (returns 402 Payment Required)
+2. **Create Payment Authorization** - Sign an EIP-3009 USDC transfer authorization with EIP-712
+3. **Upload with Payment** - Send file with `X-PAYMENT` header containing the authorization
+4. **Automatic Settlement** - Payment service verifies signature and settles payment; upload service processes file
 
 ## Examples
 
-### 1. Corrected Browser Example (`x402-upload-corrected.html`) ⭐ RECOMMENDED
+We provide **3 production-ready examples**:
 
-**The production-ready solution!** Creates ANS-104 data items signed with Ethereum and pays with USDC using manual x402 protocol implementation.
+### 1. 🚀 Browser Example with x402-fetch: `x402-upload-with-fetch-sdk.html` ⭐ EASIEST
 
-#### What Makes This Special?
+**Fully automated x402 payment handling using the official x402-fetch library.**
 
-This example handles **both required signatures** using a **single Ethereum wallet**:
+#### Why This Example?
 
-1. **Data Item Signature** - Signs your file with Ethereum key (creates ANS-104 bundle, signatureType 3)
+- ✅ **Fully automated** - Library handles all payment logic automatically
+- ✅ **Minimal code** - Just wrap fetch and use it normally
+- ✅ **x402 standard compliant** - Works with any x402-compatible service
+- ✅ **Production-ready** - Official Coinbase library
+- ✅ **No manual payment handling** - Automatically detects 402, creates payment, retries
+
+#### Quick Start
+
+```bash
+# Just open it in a browser
+open examples/x402-upload-with-fetch-sdk.html
+
+# Or serve locally
+python3 -m http.server 8080
+# Visit http://localhost:8080/x402-upload-with-fetch-sdk.html
+```
+
+#### How It Works
+
+```javascript
+import { wrapFetchWithPayment } from 'x402-fetch';
+import { createWalletClient, custom } from 'viem';
+import { baseSepolia } from 'viem/chains';
+
+// Create viem wallet client from MetaMask
+const walletClient = createWalletClient({
+  chain: baseSepolia,
+  transport: custom(window.ethereum)
+});
+
+// Wrap fetch with automatic x402 handling
+const fetchWithPayment = wrapFetchWithPayment(fetch, walletClient);
+
+// Just use it like regular fetch - payments handled automatically!
+const response = await fetchWithPayment('http://localhost:3001/v1/tx', {
+  method: 'POST',
+  body: signedDataItem
+});
+
+// Library automatically:
+// 1. Detected 402 Payment Required
+// 2. Parsed payment requirements
+// 3. Created and signed EIP-3009 payment
+// 4. Retried request with X-PAYMENT header
+// 5. Returned successful response
+```
+
+#### Libraries Used
+
+- **viem** - Ethereum wallet client (required by x402-fetch)
+- **x402-fetch** - Official x402 SDK for automatic payment handling
+- **@dha-team/arbundles** - ANS-104 data item creation and signing
+
+---
+
+### 2. 🌐 Browser Example (Manual): `x402-upload-corrected.html` ⭐ RECOMMENDED
+
+**Complete browser-based implementation with manual x402 protocol.**
+
+#### Why This Example?
+
+- ✅ **Production-ready** - Tested and verified implementation
+- ✅ **Manual x402 protocol** - No external x402 library dependencies, full control
+- ✅ **Single wallet** - Uses one Ethereum wallet for both data signing and payment
+- ✅ **Comprehensive** - Complete ANS-104 data item signing with arbundles
+- ✅ **Well-documented** - Inline comments explain every step
+- ✅ **No build step** - Just open the HTML file
+
+#### Key Features
+
+**Handles Both Required Signatures:**
+1. **Data Item Signature** - Signs your file data as an ANS-104 bundle (signatureType 3 for Ethereum)
 2. **Payment Signature** - Signs USDC payment authorization with EIP-712
 
 **Both use the same MetaMask wallet!** No Arweave wallet needed.
 
-#### Key Improvements
+**Two Signing Modes:**
+- **Private Key Mode** (testing) - Direct Ethereum private key for quick testing
+- **MetaMask Adapter** (production) - Secure browser wallet integration
 
-✅ **Manual x402 implementation** - No external x402 library dependencies
-✅ **Two signing modes** - Private key (testing) or MetaMask adapter (secure)
-✅ **Proper library usage** - Uses `@dha-team/arbundles` matching our codebase
-✅ **Complete error handling** - Detailed logging and user feedback
-✅ **Security warnings** - Clear documentation of private key handling
+#### Quick Start
 
-See `examples/ANALYSIS.md` for detailed technical analysis of improvements over the original implementation.
+```bash
+# Just open it in a browser
+open examples/x402-upload-corrected.html
 
-#### How It Works
+# Or serve locally
+python3 -m http.server 8080
+# Visit http://localhost:8080/x402-upload-corrected.html
+```
+
+#### Usage Flow
+
+1. Connect MetaMask or enter private key
+2. Select a file to upload
+3. Click "Upload with x402 Payment"
+4. Sign data item (MetaMask prompt #1)
+5. Sign USDC payment (MetaMask prompt #2)
+6. Upload completes with receipt
+
+#### Code Example
 
 ```javascript
 // Step 1: Create and sign ANS-104 data item
 const dataItem = window.arbundles.createData(fileData, signer);
 dataItem.addTag('Content-Type', 'image/jpeg');
-await dataItem.sign(signer);  // ← MetaMask prompt #1
+await dataItem.sign(signer);
 const signedDataItem = dataItem.getRaw();
 
-// Step 2: Get price quote (returns 402)
-const priceQuote = await fetch(`${paymentUrl}/v1/x402/price/3/${address}?bytes=${size}`);
+// Step 2: Get price quote
+const priceResponse = await fetch(
+  `${paymentUrl}/v1/x402/price/3/${address}?bytes=${size}`
+);
+const { accepts } = await priceResponse.json();
 
-// Step 3: Create EIP-712 payment authorization
-const signature = await metamaskSigner.signTypedData(domain, types, authorization);  // ← Prompt #2
-const paymentHeader = btoa(JSON.stringify({ x402Version: 1, scheme: 'eip-3009', ... }));
+// Step 3: Create and sign EIP-712 payment authorization
+const signature = await metamaskSigner.signTypedData(domain, types, authorization);
 
-// Step 4: Upload with X-PAYMENT header
+// Step 4: Build x402 payment header
+const paymentHeader = btoa(JSON.stringify({
+  x402Version: 1,
+  scheme: 'eip-3009',
+  network: 'base-sepolia',
+  payload: { signature, authorization }
+}));
+
+// Step 5: Upload with X-PAYMENT header
 const response = await fetch(`${uploadUrl}/v1/tx`, {
-  headers: { 'X-PAYMENT': paymentHeader },
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/octet-stream',
+    'Content-Length': size.toString(),
+    'X-PAYMENT': paymentHeader
+  },
   body: signedDataItem
 });
-```
 
-#### User Experience
-
-The user will see **two MetaMask prompts**:
-
-1. **First prompt:** "Sign message" - Creating the data item signature (if using MetaMask adapter)
-2. **Second prompt:** "Sign typed data" - Authorizing the USDC payment via EIP-712
-
-#### Features
-
-- ✅ **One wallet for everything** - No Arweave wallet needed
-- ✅ **Proper ANS-104 bundles** - Upload service accepts signatureType 3
-- ✅ **Manual x402 protocol** - Full control over payment flow
-- ✅ **Two signing modes** - Private key export or MetaMask adapter
-- ✅ **Comprehensive logging** - Know exactly what's happening
-- ✅ **No build step** - Open HTML file and go!
-
-#### Installation
-
-```bash
-# Just open it!
-open examples/x402-upload-corrected.html
+const receipt = await response.json();
+console.log('Uploaded:', receipt.id);
+console.log('Payment:', receipt.x402Payment);
 ```
 
 #### Libraries Used
 
-- `@dha-team/arbundles` - Creates and signs ANS-104 data items (matches codebase)
-- `ethers.js` - Ethereum wallet interaction and EIP-712 signing
-- Manual x402 implementation - No external x402 libraries
+- **ethers.js v6** - Ethereum wallet and EIP-712 signing
+- **@dha-team/arbundles** - ANS-104 data item creation and signing
+- **Manual x402** - No external x402 library (full protocol control)
 
 ---
 
-### 2. Original Complete Example (`x402-complete-upload.html`) ⚠️ HAS ISSUES
+### 3. 🖥️ Node.js Example: `x402-upload-example.js` ⭐ RECOMMENDED
 
-**Note:** This example has critical implementation issues discovered during code review. See `examples/ANALYSIS.md` for details.
+**Command-line tool for uploading files from Node.js/backend applications.**
 
-**Known Issues:**
-- ❌ Uses `window.x402.fetch()` API that doesn't exist
-- ❌ Expects wrong library (x402-fetch requires viem, not ethers)
-- ❌ Incorrect CDN loading (uses arbundles instead of @dha-team/arbundles)
+#### Why This Example?
 
-**Use `x402-upload-corrected.html` instead** for a working implementation.
-
----
-
-### 3. Node.js CLI Example (`x402-upload-example.js`)
-
-A command-line tool for uploading files from Node.js.
+- ✅ **Backend-friendly** - Server-side, CI/CD, automated uploads
+- ✅ **CLI tool** - Upload files from command line
+- ✅ **Library mode** - Export functions for use in your own code
+- ✅ **Complete error handling** - Production-grade error messages
+- ✅ **Balance checking** - Verifies USDC balance before upload
 
 #### Installation
 
@@ -115,23 +193,27 @@ npm install ethers@6 axios arweave arbundles
 
 #### Configuration
 
-Set environment variables:
+**Option 1: Environment Variables**
 
 ```bash
 # Required: Your Ethereum wallet private key
 export ETH_PRIVATE_KEY="0x1234..."
 
 # Optional: Service URLs (defaults to localhost)
-export UPLOAD_SERVICE_URL="http://localhost:3000"
-export PAYMENT_SERVICE_URL="http://localhost:4000"
+export UPLOAD_SERVICE_URL="http://localhost:3001"
+export PAYMENT_SERVICE_URL="http://localhost:4001"
 
 # Optional: RPC URL (defaults to Base Sepolia)
 export BASE_SEPOLIA_RPC_URL="https://sepolia.base.org"
 ```
 
-Or edit the `CONFIG` object in the file directly.
+**Option 2: Edit Config Object**
+
+Edit the `CONFIG` object in `x402-upload-example.js` directly.
 
 #### Usage
+
+**As CLI Tool:**
 
 ```bash
 # Upload a file
@@ -141,17 +223,33 @@ node x402-upload-example.js ./my-file.txt
 node x402-upload-example.js ./photo.jpg
 
 # Upload any file
-node x402-upload-example.js /path/to/file
+node x402-upload-example.js /path/to/any-file
+```
+
+**As Library:**
+
+```javascript
+const { uploadFileWithX402, checkUsdcBalance } = require('./x402-upload-example.js');
+
+// Check balance first
+const balance = await checkUsdcBalance(wallet, usdcContract);
+console.log(`USDC Balance: ${balance} USDC`);
+
+// Upload a file
+const receipt = await uploadFileWithX402('./myfile.txt');
+console.log('Upload ID:', receipt.id);
+console.log('Payment:', receipt.x402Payment);
 ```
 
 #### Features
 
 - ✅ Checks USDC balance before upload
 - ✅ Gets price quote from payment service
-- ✅ Creates and signs EIP-712 authorization
+- ✅ Creates and signs ANS-104 data items
+- ✅ Creates and signs EIP-712 payment authorization
 - ✅ Uploads file with x402 payment header
-- ✅ Displays receipt with transaction hash
-- ✅ Can be used as a library (exports functions)
+- ✅ Displays detailed receipt with transaction hash
+- ✅ Can be used as a CLI or imported as library
 
 #### Example Output
 
@@ -172,7 +270,7 @@ node x402-upload-example.js /path/to/file
    Receipt: {
      "id": "xyz789...",
      "x402Payment": {
-       "paymentId": "uuid",
+       "paymentId": "550e8400-e29b-41d4-a716-446655440000",
        "txHash": "0xabcd...",
        "network": "base-sepolia",
        "mode": "hybrid"
@@ -183,447 +281,115 @@ node x402-upload-example.js /path/to/file
    View on Arweave: https://arweave.net/xyz789...
 ```
 
----
+#### Libraries Used
 
-### 4. Browser Example with x402fetch (`x402-browser-upload-with-x402fetch.html`) ⚠️ LIBRARY ISSUES
-
-**Note:** This example demonstrates the x402fetch library concept, but has implementation issues.
-
-#### Issues with Current Implementation
-
-- ❌ `window.x402.fetch()` API doesn't exist (x402-fetch exports `wrapFetchWithPayment`)
-- ❌ x402-fetch requires **viem** wallet clients, not ethers.js signers
-- ❌ Needs rewrite to use correct API
-
-**For a working example, use `x402-upload-corrected.html` instead.**
-
-#### What x402fetch WOULD Be
-
-`x402-fetch` is Coinbase's client library that works like regular `fetch()` but automatically handles x402 payments:
-
-```javascript
-// Instead of manually handling price quotes, signatures, headers...
-const response = await x402fetch(url, {
-  method: 'POST',
-  body: fileData,
-  signer: metamaskSigner  // Just pass your MetaMask signer!
-});
-// x402fetch does everything automatically! 🎉
-```
-
-#### Features
-
-- ✅ **Automatic price quote requests** - No manual API calls needed
-- ✅ **Automatic EIP-712 signing** - Prompts MetaMask at the right time
-- ✅ **Automatic X-PAYMENT headers** - No manual header construction
-- ✅ **Built-in retry logic** - Handles network errors gracefully
-- ✅ **Progress callbacks** - Know exactly what's happening
-- ✅ **Works like fetch()** - Familiar API, just with payments!
-
-#### Installation
-
-No installation! Just open the HTML file:
-
-```bash
-# Open directly
-open examples/x402-browser-upload-with-x402fetch.html
-
-# Or serve locally
-python3 -m http.server 8080
-# Visit http://localhost:8080/x402-browser-upload-with-x402fetch.html
-```
-
-#### How It Works
-
-```javascript
-// 🎉 The entire payment flow in one function call!
-const response = await window.x402.fetch(`${uploadUrl}/v1/tx`, {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/octet-stream',
-    'Content-Length': fileSize.toString(),
-  },
-  body: fileBuffer,
-
-  // x402-specific options
-  signer: signer,           // Your MetaMask signer
-  network: 'base-sepolia',  // Which network to use
-
-  // Optional: Progress callbacks
-  onPaymentRequired: (requirements) => {
-    console.log('Payment needed:', requirements);
-  },
-  onPaymentSigning: () => {
-    console.log('Please sign in MetaMask...');
-  },
-  onPaymentSigned: () => {
-    console.log('Payment signed!');
-  },
-});
-
-const data = await response.json();
-console.log('Uploaded:', data.id);
-```
-
-#### Comparison
-
-**Manual x402 (70+ lines):**
-```javascript
-// 1. Get price quote
-const quote = await axios.get('/v1/x402/price/...');
-
-// 2. Build EIP-712 domain
-const domain = { name: 'USD Coin', version: '2', ... };
-
-// 3. Create authorization
-const authorization = { from, to, value, validAfter, validBefore, nonce };
-
-// 4. Sign with MetaMask
-const signature = await signer.signTypedData(domain, types, authorization);
-
-// 5. Build payment payload
-const paymentPayload = { x402Version: 1, scheme: 'eip-3009', ... };
-
-// 6. Encode as base64
-const paymentHeader = btoa(JSON.stringify(paymentPayload));
-
-// 7. Upload with header
-const response = await axios.post(url, data, {
-  headers: { 'X-PAYMENT': paymentHeader }
-});
-```
-
-**x402fetch (5 lines):**
-```javascript
-const response = await x402fetch(url, {
-  method: 'POST',
-  body: data,
-  signer: signer
-});
-```
+- **ethers.js v6** - Ethereum wallet and EIP-712 signing
+- **arweave** - Arweave utilities
+- **arbundles** - ANS-104 data item creation
+- **axios** - HTTP requests
 
 ---
 
-### 5. Browser Example - Manual (`x402-browser-upload.html`)
+## API Documentation
 
-A web-based interface showing the **manual x402 implementation** (for educational purposes).
+Both examples interact with the AR.IO Bundler APIs. Full specifications available in OpenAPI format:
 
-#### Installation
+### Upload Service API
 
-No installation required! Just open the HTML file in a browser.
+**Location:** `packages/upload-service/docs/openapi.yaml`
 
-```bash
-# Open in default browser
-open x402-browser-upload.html
+**x402-Related Endpoints:**
 
-# Or serve with a local server
-python3 -m http.server 8080
-# Then visit http://localhost:8080/x402-browser-upload.html
-```
+- `POST /v1/tx` - Upload signed data item
+  - Accepts `X-PAYMENT` header for x402 payments
+  - Requires `Content-Length` header when using X-PAYMENT
+  - Returns receipt with `x402Payment` object if paid via x402
 
-#### Features
+### Payment Service API
 
-- ✅ MetaMask integration for wallet connection
-- ✅ Real-time USDC balance display
-- ✅ Network selection (Base, Ethereum testnet/mainnet)
-- ✅ File selection with size preview
-- ✅ Automatic price quote and payment signing
-- ✅ Live log display with color-coded messages
-- ✅ Upload receipt with Arweave link
-- ✅ Fully client-side (no backend needed)
+**Location:** `packages/payment-service/docs/openapi.yaml`
 
-#### Screenshots
+**x402 Endpoints:**
 
-<details>
-<summary>Click to view interface screenshots</summary>
+- `GET /v1/x402/price/{signatureType}/{address}?bytes=N`
+  - Get payment requirements for uploading N bytes
+  - Returns 402 Payment Required with EIP-3009 requirements
+  - Response includes USDC amount, contract address, recipient, timeout
 
-**Step 1: Connect Wallet**
-- Click "Connect MetaMask"
-- Approve connection in MetaMask
-- View your address and USDC balance
+- `POST /v1/x402/payment/{signatureType}/{address}`
+  - Verify and settle x402 payment
+  - Request body: `{ paymentHeader, dataItemId, byteCount, mode }`
+  - Returns payment result with `paymentId`, `txHash`, `network`
 
-**Step 2: Select File**
-- Click "Choose File"
-- Select any file from your computer
-- View file name and size
+- `POST /v1/x402/finalize`
+  - Finalize payment after upload (fraud detection)
+  - Compares declared vs actual byte count
+  - Returns finalization result with refund or fraud penalty
 
-**Step 3: Upload**
-- Click "Get Price & Upload"
-- Sign the EIP-712 message in MetaMask
-- View upload progress in the log
-- See receipt with Arweave link
+## Payment Modes
 
-</details>
+The x402 protocol supports 3 payment modes:
 
----
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| **payg** | Pay-as-you-go - USDC deducted per upload | One-time uploads, no account needed |
+| **topup** | Top up account balance with USDC | Frequent uploads, account-based billing |
+| **hybrid** | Pay for upload + any excess tops up balance | Default mode - best of both worlds |
 
-## Network Configuration
+**Default mode:** `hybrid` (recommended)
 
-### Testnet (Recommended for Testing)
+## Network Support
 
-**Base Sepolia**
-- Chain ID: `84532`
-- USDC Address: `0x036CbD53842c5426634e7929541eC2318f3dCF7e`
-- RPC: `https://sepolia.base.org`
-- Faucet: [Base Sepolia Faucet](https://www.coinbase.com/faucets/base-sepolia-faucet)
+The examples support multiple EVM networks:
 
-**Ethereum Sepolia**
-- Chain ID: `11155111`
-- USDC Address: `0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238`
-- RPC: `https://sepolia.infura.io/v3/YOUR-PROJECT-ID`
-- Faucet: [Sepolia Faucet](https://sepoliafaucet.com/)
+- **Base Sepolia** (testnet) - Default for testing
+- **Base Mainnet** (production) - Production USDC payments
+- **Ethereum Mainnet** - L1 USDC support
+- **Polygon** - Lower gas fees
 
-### Mainnet (Production)
+Configure network in examples or via environment variables.
 
-**Base Mainnet**
-- Chain ID: `8453`
-- USDC Address: `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
-- RPC: `https://mainnet.base.org`
+## USDC Contracts
 
-**Ethereum Mainnet**
-- Chain ID: `1`
-- USDC Address: `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48`
-- RPC: `https://mainnet.infura.io/v3/YOUR-PROJECT-ID`
+### Testnet (Base Sepolia)
+- **USDC Contract:** `0x036CbD53842c5426634e7929541eC2318f3dCF7e`
+- **Get Test USDC:** [Base Sepolia Faucet](https://www.coinbase.com/faucets/base-sepolia-faucet)
 
----
-
-## How It Works
-
-### 1. Price Quote (HTTP 402 Response)
-
-```http
-GET /v1/x402/price/1/address?bytes=1024
-```
-
-Response (402 Payment Required):
-```json
-{
-  "x402Version": 1,
-  "accepts": [
-    {
-      "scheme": "eip-3009",
-      "network": "base-sepolia",
-      "maxAmountRequired": "123456",
-      "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-      "payTo": "0x1234567890123456789012345678901234567890",
-      "timeout": { "validBefore": 1735257600000 },
-      "extra": { "name": "USDC", "version": "2" }
-    }
-  ]
-}
-```
-
-### 2. Create EIP-712 Signature
-
-```javascript
-const domain = {
-  name: 'USD Coin',
-  version: '2',
-  chainId: 84532,
-  verifyingContract: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
-};
-
-const types = {
-  TransferWithAuthorization: [
-    { name: 'from', type: 'address' },
-    { name: 'to', type: 'address' },
-    { name: 'value', type: 'uint256' },
-    { name: 'validAfter', type: 'uint256' },
-    { name: 'validBefore', type: 'uint256' },
-    { name: 'nonce', type: 'bytes32' },
-  ],
-};
-
-const signature = await signer.signTypedData(domain, types, authorization);
-```
-
-### 3. Create x402 Payment Header
-
-```javascript
-const paymentPayload = {
-  x402Version: 1,
-  scheme: 'eip-3009',
-  network: 'base-sepolia',
-  payload: {
-    signature: '0xabcd...',
-    authorization: {
-      from: '0xuser...',
-      to: '0xrecipient...',
-      value: '123456',
-      validAfter: 1735254000,
-      validBefore: 1735257600,
-      nonce: '0xrandom...',
-    },
-  },
-};
-
-const paymentHeader = Buffer.from(JSON.stringify(paymentPayload)).toString('base64');
-```
-
-### 4. Upload with Payment Header
-
-```http
-POST /v1/tx
-Content-Type: application/octet-stream
-Content-Length: 1024
-X-PAYMENT: eyJ4NDAyVmVyc2lvbiI6MSwic2NoZW1lIjoiZXhhY3QiLCAuLi59
-
-[binary file data]
-```
-
-### 5. Receive Receipt
-
-```json
-{
-  "id": "xyz789...",
-  "timestamp": 1735257600000,
-  "winc": "0",
-  "x402Payment": {
-    "paymentId": "uuid",
-    "txHash": "0xabcd...",
-    "network": "base-sepolia",
-    "mode": "hybrid"
-  }
-}
-```
-
----
-
-## Testing
-
-### Get Test USDC
-
-1. **Base Sepolia**: Use [Coinbase Faucet](https://www.coinbase.com/faucets/base-sepolia-faucet)
-2. **Ethereum Sepolia**: Bridge from Ethereum Sepolia using [Circle Bridge](https://www.circle.com/en/usdc-multichain/base)
-
-### Verify Transaction
-
-After upload, you can verify the USDC transaction on block explorers:
-
-- **Base Sepolia**: https://sepolia.basescan.org/tx/[txHash]
-- **Base Mainnet**: https://basescan.org/tx/[txHash]
-- **Ethereum Sepolia**: https://sepolia.etherscan.io/tx/[txHash]
-- **Ethereum Mainnet**: https://etherscan.io/tx/[txHash]
-
----
+### Mainnet (Base)
+- **USDC Contract:** `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
+- **Get USDC:** Bridge from Ethereum or buy on exchanges
 
 ## Troubleshooting
 
-### "MetaMask not installed"
-- Install [MetaMask browser extension](https://metamask.io/)
-
 ### "Insufficient USDC balance"
-- Get testnet USDC from faucets (see "Get Test USDC" above)
-- For mainnet, buy USDC from an exchange
-
-### "Wrong network"
-- Switch to the correct network in MetaMask
-- For Base Sepolia, you may need to add it manually:
-  - Network Name: Base Sepolia
-  - RPC URL: https://sepolia.base.org
-  - Chain ID: 84532
-  - Currency: ETH
+- Check your USDC balance using example's balance checker
+- For testnet: Get test USDC from Base Sepolia faucet
+- For mainnet: Ensure you have enough USDC in your wallet
 
 ### "Payment verification failed"
-- Ensure you're on the correct network
-- Check that Content-Length header matches actual file size
-- Verify USDC contract address is correct for the network
+- Ensure you're using the correct network (testnet vs mainnet)
+- Check that payment service is running and accessible
+- Verify USDC contract address matches the network
 
-### "Upload rejected - fraud detected"
-- This means the declared file size (Content-Length) didn't match actual upload size
-- Ensure you're setting Content-Length correctly
-- Don't modify the file between getting price quote and uploading
+### "Content-Length required"
+- When using X-PAYMENT header, Content-Length must be present
+- This enables fraud detection (declared vs actual size)
 
----
+### "Data item parsing error"
+- Ensure file is properly signed as ANS-104 data item
+- Check that arbundles library is correctly loaded
+- Verify signer is properly initialized
 
-## Advanced Usage
+## Additional Resources
 
-### Using as a Library (Node.js)
-
-```javascript
-const x402 = require('./x402-upload-example');
-
-// Get price quote
-const quote = await x402.getPriceQuote('./file.txt', 1);
-
-// Create payment
-const { paymentHeader } = await x402.createX402Payment(quote);
-
-// Upload
-const receipt = await x402.uploadWithX402('./file.txt', paymentHeader);
-
-console.log('Uploaded:', receipt.id);
-```
-
-### Custom Network Configuration
-
-```javascript
-// Add custom network to CONFIG
-x402.CONFIG.networks['my-custom-network'] = {
-  chainId: 1234,
-  usdcAddress: '0x...',
-  rpcUrl: 'https://...',
-};
-```
-
-### Payment Modes
-
-The x402 integration supports three payment modes:
-
-1. **PAYG (Pay-as-you-go)**: Pay exact amount for upload
-2. **Top-up**: Add entire payment to balance
-3. **Hybrid** (default): Pay for upload + credit excess to balance
-
-To specify mode in Node.js:
-```javascript
-// Modify the upload request to include mode
-const response = await axios.post(url, data, {
-  headers: {
-    'X-PAYMENT': paymentHeader,
-    'X-PAYMENT-MODE': 'topup', // or 'payg' or 'hybrid'
-  },
-});
-```
-
----
-
-## Security Notes
-
-⚠️ **Never commit private keys to version control!**
-
-- Use environment variables for private keys
-- Use `.env` files (and add to `.gitignore`)
-- For production, use secure key management (AWS KMS, HashiCorp Vault, etc.)
-
-⚠️ **Always verify transaction details before signing**
-
-- Check the amount in USDC
-- Verify the recipient address
-- Confirm the network matches your expectation
-
----
-
-## Resources
-
-- [Coinbase x402 Protocol Spec](https://github.com/coinbase/x402)
-- [EIP-3009: Transfer With Authorization](https://eips.ethereum.org/EIPS/eip-3009)
-- [EIP-712: Typed Structured Data](https://eips.ethereum.org/EIPS/eip-712)
-- [AR.IO Bundler Documentation](../README.md)
-- [USDC Documentation](https://www.circle.com/en/usdc)
-
----
+- **x402 Protocol Spec:** https://github.com/coinbase/x402
+- **EIP-3009 Standard:** https://eips.ethereum.org/EIPS/eip-3009
+- **ANS-104 Spec:** https://github.com/ArweaveTeam/arweave-standards/blob/master/ans/ANS-104.md
+- **Technical Analysis:** See `ANALYSIS.md` for detailed implementation notes
 
 ## Support
 
 For issues or questions:
-- Open an issue on GitHub
-- Check the [implementation documentation](../packages/payment-service/X402_IMPLEMENTATION.md)
-- Review test cases in `packages/payment-service/tests/x402.int.test.ts`
-
----
-
-## License
-
-Copyright (C) 2022-2024 Permanent Data Solutions, Inc. All Rights Reserved.
-
-This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+- Check `ANALYSIS.md` for technical details
+- Review OpenAPI specs in `packages/*/docs/openapi.yaml`
+- Open an issue in the GitHub repository

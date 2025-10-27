@@ -143,6 +143,9 @@ export interface PricingService {
     quotedPaymentAmount: number;
     adjustments: PaymentAdjustment[];
   }>;
+  getTxAttributesForDataItems: (
+    dataItems: Array<{ byteCount: ByteCount; signatureType: number }>
+  ) => Promise<{ reward: number }>;
 }
 
 /** Stripe accepts 8 digits on all currency types except IDR */
@@ -974,6 +977,30 @@ export class TurboPricingService implements PricingService {
       paymentAmount: fiatPriceForCryptoAmount,
       quotedPaymentAmount: baseFiatPriceForCryptoAmount,
       adjustments,
+    };
+  }
+
+  public async getTxAttributesForDataItems(
+    dataItems: Array<{ byteCount: ByteCount; signatureType: number }>
+  ): Promise<{ reward: number }> {
+    // Calculate the total Winston cost for all data items
+    // For now, we sum the byte counts and calculate the cost
+    // In the future, we could factor in signature type overhead
+    const totalBytes = dataItems.reduce(
+      (sum, item) => sum + item.byteCount.valueOf(),
+      0
+    );
+
+    const { finalPrice } = await this.getWCForBytes(ByteCount(totalBytes));
+
+    this.logger.debug("Calculated tx attributes for data items", {
+      dataItems,
+      totalBytes,
+      reward: +finalPrice.winc,
+    });
+
+    return {
+      reward: +finalPrice.winc,
     };
   }
 }

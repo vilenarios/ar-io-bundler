@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AR.IO Upload with x402-fetch SDK</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      max-width: 900px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      border-bottom: 3px solid #0070f3;
+      padding-bottom: 10px;
+    }
+    .badge {
+      background: #0070f3;
+      color: white;
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      margin-left: 10px;
+    }
+    .info {
+      background: #e7f3ff;
+      border-left: 4px solid #0070f3;
+      padding: 15px;
+      margin: 20px 0;
+    }
+    button {
+      background: #0070f3;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      border-radius: 5px;
+      cursor: pointer;
+      margin: 10px 5px 10px 0;
+    }
+    button:hover {
+      background: #0051cc;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    input[type="file"] {
+      margin: 10px 0;
+    }
+    .log {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 15px;
+      border-radius: 5px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      max-height: 400px;
+      overflow-y: auto;
+      margin: 20px 0;
+    }
+    .log-entry {
+      margin: 5px 0;
+    }
+    .log-success { color: #4caf50; }
+    .log-error { color: #f44336; }
+    .log-info { color: #2196f3; }
+    .config {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      padding: 15px;
+      border-radius: 5px;
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚀 AR.IO Upload with x402-fetch <span class="badge">AUTOMATIC</span></h1>
+
+    <div class="info">
+      <strong>✨ Fully Automated x402 Payment</strong>
+      <p>This example uses the official <code>x402-fetch</code> library that automatically handles the entire payment flow. No manual payment creation needed!</p>
+      <p>The library automatically:</p>
+      <ul>
+        <li>Detects 402 Payment Required responses</li>
+        <li>Parses payment requirements</li>
+        <li>Creates and signs EIP-3009 payment authorization</li>
+        <li>Retries the request with X-PAYMENT header</li>
+      </ul>
+    </div>
+
+    <div class="config">
+      <h3>⚙️ Configuration</h3>
+      <p><strong>Upload Service:</strong> <input type="text" id="uploadUrl" value="http://localhost:3001" style="width: 300px;"></p>
+      <p><strong>Network:</strong> Base Sepolia (testnet)</p>
+      <p><strong>USDC Contract:</strong> 0x036CbD53842c5426634e7929541eC2318f3dCF7e</p>
+    </div>
+
+    <div style="margin: 20px 0;">
+      <button id="connectBtn">1. Connect MetaMask</button>
+      <span id="walletStatus" style="margin-left: 10px;"></span>
+    </div>
+
+    <div style="margin: 20px 0;">
+      <label for="fileInput">2. Select File to Upload:</label><br>
+      <input type="file" id="fileInput" disabled>
+    </div>
+
+    <div style="margin: 20px 0;">
+      <button id="uploadBtn" disabled>3. Upload with Automatic x402 Payment</button>
+    </div>
+
+    <div id="logContainer" class="log"></div>
+  </div>
+
+  <script type="module">
+    import { createWalletClient, custom } from 'https://esm.sh/viem@2.x';
+    import { baseSepolia } from 'https://esm.sh/viem@2.x/chains';
+    import { wrapFetchWithPayment } from 'https://esm.sh/x402-fetch@latest';
+    import { createData } from 'https://unpkg.com/@dha-team/arbundles@0.11.1/build/web/bundle.js';
+
+    let walletClient;
+    let account;
+    let fetchWithPayment;
+
+    const log = (message, type = 'info') => {
+      const logContainer = document.getElementById('logContainer');
+      const entry = document.createElement('div');
+      entry.className = `log-entry log-${type}`;
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      logContainer.appendChild(entry);
+      logContainer.scrollTop = logContainer.scrollHeight;
+    };
+
+    // Connect to MetaMask
+    document.getElementById('connectBtn').addEventListener('click', async () => {
+      try {
+        log('Connecting to MetaMask...', 'info');
+
+        if (!window.ethereum) {
+          log('MetaMask not found! Please install MetaMask.', 'error');
+          return;
+        }
+
+        // Request account access
+        const accounts = await window.ethereum.request({
+          method: 'eth_requestAccounts'
+        });
+        account = accounts[0];
+
+        // Create viem wallet client
+        walletClient = createWalletClient({
+          account,
+          chain: baseSepolia,
+          transport: custom(window.ethereum)
+        });
+
+        // Wrap fetch with x402 payment handling
+        fetchWithPayment = wrapFetchWithPayment(fetch, walletClient);
+
+        log(`✅ Connected: ${account}`, 'success');
+        document.getElementById('walletStatus').textContent = `✅ ${account.substring(0, 6)}...${account.substring(38)}`;
+        document.getElementById('fileInput').disabled = false;
+        document.getElementById('uploadBtn').disabled = false;
+
+      } catch (error) {
+        log(`❌ Connection failed: ${error.message}`, 'error');
+      }
+    });
+
+    // Handle file selection
+    document.getElementById('fileInput').addEventListener('change', () => {
+      const file = document.getElementById('fileInput').files[0];
+      if (file) {
+        log(`📄 Selected file: ${file.name} (${file.size} bytes)`, 'info');
+      }
+    });
+
+    // Upload with automatic x402 payment
+    document.getElementById('uploadBtn').addEventListener('click', async () => {
+      try {
+        const fileInput = document.getElementById('fileInput');
+        const file = fileInput.files[0];
+
+        if (!file) {
+          log('❌ Please select a file first', 'error');
+          return;
+        }
+
+        log('📤 Starting upload with automatic x402 payment...', 'info');
+        log(`File: ${file.name} (${file.size} bytes)`, 'info');
+
+        // Read file as ArrayBuffer
+        const fileData = await file.arrayBuffer();
+
+        log('🔐 Creating and signing ANS-104 data item...', 'info');
+
+        // Create custom Ethereum signer for arbundles
+        class MetaMaskSigner {
+          constructor() {
+            this.signatureType = 3; // Ethereum
+            this.signatureLength = 65;
+            this.ownerLength = 65;
+          }
+
+          async sign(message) {
+            const signature = await window.ethereum.request({
+              method: 'personal_sign',
+              params: [
+                '0x' + Array.from(new Uint8Array(message))
+                  .map(b => b.toString(16).padStart(2, '0'))
+                  .join(''),
+                account
+              ]
+            });
+            return new Uint8Array(
+              signature.match(/.{1,2}/g).map(byte => parseInt(byte, 16))
+            );
+          }
+
+          async getPublicKey() {
+            // Return Ethereum address as public key
+            const address = account.replace('0x', '');
+            return new Uint8Array(
+              address.match(/.{1,2}/g).map(byte => parseInt(byte, 16))
+            );
+          }
+        }
+
+        const signer = new MetaMaskSigner();
+        const dataItem = createData(new Uint8Array(fileData), signer);
+        dataItem.addTag('Content-Type', file.type || 'application/octet-stream');
+        dataItem.addTag('File-Name', file.name);
+
+        await dataItem.sign(signer);
+        const signedDataItem = dataItem.getRaw();
+
+        log('✅ Data item signed', 'success');
+        log(`Data Item ID: ${dataItem.id}`, 'info');
+
+        const uploadUrl = document.getElementById('uploadUrl').value;
+
+        log('💰 Uploading with x402-fetch (automatic payment handling)...', 'info');
+        log('⏳ x402-fetch will automatically handle any 402 responses', 'info');
+
+        // Use x402-fetch - it handles 402 automatically!
+        const response = await fetchWithPayment(`${uploadUrl}/v1/tx`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': signedDataItem.length.toString(),
+          },
+          body: signedDataItem
+        });
+
+        if (!response.ok) {
+          throw new Error(`Upload failed with status ${response.status}`);
+        }
+
+        const receipt = await response.json();
+
+        log('✅ Upload successful!', 'success');
+        log(`Data Item ID: ${receipt.id}`, 'success');
+        log(`Timestamp: ${new Date(receipt.timestamp).toLocaleString()}`, 'info');
+
+        // Check for x402 payment info
+        const paymentResponseHeader = response.headers.get('X-Payment-Response');
+        if (paymentResponseHeader) {
+          const paymentResponse = JSON.parse(atob(paymentResponseHeader));
+          log('💳 Payment Details:', 'success');
+          log(`  Payment ID: ${paymentResponse.paymentId}`, 'info');
+          log(`  TX Hash: ${paymentResponse.txHash}`, 'info');
+          log(`  Network: ${paymentResponse.network}`, 'info');
+          log(`  Mode: ${paymentResponse.mode}`, 'info');
+        }
+
+        if (receipt.x402Payment) {
+          log('📋 Receipt includes x402 payment:', 'info');
+          log(JSON.stringify(receipt.x402Payment, null, 2), 'info');
+        }
+
+        log('🌐 View on Arweave: https://arweave.net/' + receipt.id, 'success');
+
+      } catch (error) {
+        log(`❌ Upload failed: ${error.message}`, 'error');
+        console.error('Upload error:', error);
+      }
+    });
+
+    // Initial log
+    log('👋 Welcome! This example uses x402-fetch for automatic payment handling.', 'info');
+    log('📚 Connect your wallet to get started.', 'info');
+  </script>
+</body>
+</html>

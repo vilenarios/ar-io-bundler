@@ -328,7 +328,7 @@ export async function dataItemRoute(ctx: KoaContext, next: Next) {
       return next();
     }
   } else if (rawContentLength !== undefined) {
-    // Traditional balance check flow
+    // No X-PAYMENT header - check if user has balance
     let checkBalanceResponse: CheckBalanceResponse;
     try {
       logger.debug("Checking balance for upload...");
@@ -348,15 +348,53 @@ export async function dataItemRoute(ctx: KoaContext, next: Next) {
     }
 
     if (checkBalanceResponse.userHasSufficientBalance) {
-      logger.debug("User can afford bytes", checkBalanceResponse);
+      // User has balance - continue with traditional flow
+      logger.debug("User has balance, proceeding with upload", checkBalanceResponse);
     } else {
+      // No balance and no X-PAYMENT - return 402 with x402 payment requirements
+      logger.debug("No balance and no X-PAYMENT header - returning 402 with x402 requirements");
+
       await removeFromInFlight({ dataItemId, cacheService, logger });
 
-      errorResponse(ctx, {
-        status: 402,
-        error: new InsufficientBalance(),
-      });
-      return next();
+      // Get x402 payment requirements from payment service
+      try {
+        const x402Requirements = await paymentService.getX402PriceQuote({
+          byteCount: rawContentLength,
+          nativeAddress,
+          signatureType,
+        });
+
+        if (!x402Requirements) {
+          errorResponse(ctx, {
+            status: 503,
+            errorMessage: "Payment service unavailable",
+          });
+          return next();
+        }
+
+        // x402-compliant 402 response
+        ctx.status = 402;
+        ctx.set("X-Payment-Required", "x402-1");
+        ctx.set("Content-Type", "application/json");
+        ctx.body = x402Requirements;
+
+        logger.info("Returned 402 Payment Required with x402 requirements", {
+          dataItemId,
+          byteCount: rawContentLength,
+          nativeAddress,
+        });
+
+        MetricRegistry.x402PaymentRequired.inc();
+        return next();
+      } catch (error) {
+        logger.error("Failed to get x402 price quote", { error });
+        errorResponse(ctx, {
+          status: 503,
+          errorMessage: "Failed to generate payment requirements",
+          error,
+        });
+        return next();
+      }
     }
   }
 
@@ -921,6 +959,7 @@ export async function dataItemRoute(ctx: KoaContext, next: Next) {
     };
   }
   if (x402PaymentId) {
+    // Add x402 payment info to response body
     body = {
       ...body,
       x402Payment: {
@@ -930,6 +969,20 @@ export async function dataItemRoute(ctx: KoaContext, next: Next) {
         mode: x402Mode,
       },
     };
+
+    // x402 standard: Set X-Payment-Response header with payment details
+    const paymentResponse = {
+      paymentId: x402PaymentId,
+      txHash: x402TxHash,
+      network: x402Network,
+      mode: x402Mode,
+    };
+    ctx.set(
+      "X-Payment-Response",
+      Buffer.from(JSON.stringify(paymentResponse)).toString("base64")
+    );
+
+    logger.debug("Set X-Payment-Response header", { paymentResponse });
   }
   ctx.body = body;
 

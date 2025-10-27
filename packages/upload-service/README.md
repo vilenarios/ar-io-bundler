@@ -15,6 +15,14 @@ They are composed atop a common set of service dependencies including but not li
 
 Data items accepted by the service can be signed with Arweave, Ethereum, or Solana private keys.
 
+## Payment Methods
+
+The Upload Service integrates with the Payment Service to support multiple payment methods:
+
+- **x402 Protocol (Primary)**: HTTP 402 standard with USDC payments via EIP-3009 - See [examples/](../../examples/) for integration guides
+- **Account Balance**: Traditional credit-based uploads using pre-loaded account balance
+- **Free Uploads**: Allowlist-based free uploads for authorized addresses
+
 ## Setting up the development environment
 
 ### System Package Installation

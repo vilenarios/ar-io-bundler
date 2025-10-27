@@ -25,9 +25,13 @@ export interface X402PaymentRequirements {
   scheme: string;
   network: string;
   maxAmountRequired: string;
-  asset: string;
+  resource: string;
+  description: string;
+  mimeType: string;
+  outputSchema?: object;
   payTo: string;
-  timeout: { validBefore: number };
+  maxTimeoutSeconds: number;
+  asset: string;
   extra?: { name: string; version: string };
 }
 

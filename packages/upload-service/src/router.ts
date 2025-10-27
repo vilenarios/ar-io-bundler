@@ -36,7 +36,7 @@ import { KoaContext } from "./server";
 const metricsRegistry = MetricRegistry.getInstance().getRegistry();
 promClient.collectDefaultMetrics({ register: metricsRegistry });
 
-const router = new Router();
+const router = new Router() as any;
 
 // Publish to both root and v1 for convenience, but root might be deprecated or iterate in the future
 const serveRoutesAndV1 = (path: string[]) =>
@@ -48,7 +48,7 @@ router.post(serveRoutesAndV1(["/tx", "/tx/:token"]), dataItemRoute);
 /**
  * START TEMPORARY PATCH TO SUPPORT up.arweave.net
  */
-router.get(["/price/:foo/:bar", "/price/:bar"], (ctx, next: Next) => {
+router.get(["/price/:foo/:bar", "/price/:bar"], (ctx: KoaContext, next: Next) => {
   ctx.body = "0.0000000000000";
   return next();
 });

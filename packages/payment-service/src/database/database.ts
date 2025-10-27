@@ -16,7 +16,7 @@
  */
 import { Knex } from "knex";
 
-import { TransactionId } from "../types";
+import { TransactionId, Winston } from "../types";
 import { WC } from "../types/arc";
 import {
   ArNSPurchase,
@@ -24,6 +24,7 @@ import {
   ArNSPurchaseQuote,
   ArNSPurchaseQuoteParams,
   ArNSPurchaseStatusResult,
+  AuditChangeReason,
   ChargebackReceipt,
   ChargebackReceiptId,
   CreateBalanceReservationParams,
@@ -287,6 +288,18 @@ export interface Database {
    * Delete an x402 payment reservation
    */
   deleteX402PaymentReservation: (dataItemId: DataItemId) => Promise<void>;
+
+  /**
+   * Adjust user's Winston balance and create audit log entry
+   * Used for x402 top-up credits and hybrid mode excess credits
+   */
+  adjustUserWinstonBalance: (params: {
+    userAddress: UserAddress;
+    userAddressType: UserAddressType;
+    winstonAmount: Winston;
+    changeReason: AuditChangeReason;
+    changeId: string;
+  }) => Promise<void>;
 
   /**
    * Clean up expired x402 payment reservations

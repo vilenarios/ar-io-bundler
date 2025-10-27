@@ -27,6 +27,7 @@ import { X402PricingOracle } from "../pricing/x402PricingOracle";
 import { KoaContext } from "../server";
 import { UserAddressType } from "../database/dbTypes";
 import { ByteCount } from "../types/byteCount";
+import { W } from "../types";
 import { X402PaymentRequiredResponse } from "../x402/x402Service";
 
 /**
@@ -91,7 +92,7 @@ export async function x402PriceRoute(ctx: KoaContext, next: Next) {
     // Convert Winston to USDC
     const x402Oracle = new X402PricingOracle();
     const usdcAmount = await x402Oracle.getUSDCForWinston(
-      winstonWithBuffer.toString()
+      W(winstonWithBuffer.toString())
     );
 
     // Generate payment requirements for all enabled networks
@@ -109,11 +110,33 @@ export async function x402PriceRoute(ctx: KoaContext, next: Next) {
       scheme: "exact",
       network: networkName,
       maxAmountRequired: usdcAmount,
-      asset: config.usdcAddress,
-      payTo: x402PaymentAddress!,
-      timeout: {
-        validBefore: Date.now() + x402PaymentTimeoutMs,
+      resource: "/v1/tx",
+      description: "Upload data to Arweave via AR.IO Bundler",
+      mimeType: "application/json",
+      outputSchema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Data item ID" },
+          timestamp: { type: "number", description: "Upload timestamp in milliseconds" },
+          owner: { type: "string", description: "Normalized wallet address" },
+          deadlineHeight: { type: "number", description: "Deadline block height" },
+          version: { type: "string", description: "Receipt version" },
+          signature: { type: "string", description: "Receipt signature" },
+          x402Payment: {
+            type: "object",
+            description: "x402 payment details (if paid via x402)",
+            properties: {
+              paymentId: { type: "string" },
+              txHash: { type: "string" },
+              network: { type: "string" },
+              mode: { type: "string" },
+            },
+          },
+        },
       },
+      payTo: x402PaymentAddress!,
+      maxTimeoutSeconds: Math.floor(x402PaymentTimeoutMs / 1000),
+      asset: config.usdcAddress,
       extra: {
         name: "USD Coin",
         version: "2", // EIP-712 domain version for USDC
@@ -134,7 +157,10 @@ export async function x402PriceRoute(ctx: KoaContext, next: Next) {
       networksAvailable: enabledNetworks.length,
     });
 
-    ctx.status = 200;
+    // x402 standard: return 402 Payment Required
+    ctx.status = 402;
+    ctx.set("X-Payment-Required", "x402-1");
+    ctx.set("Content-Type", "application/json");
     ctx.body = response;
   } catch (error) {
     logger.error("Failed to generate x402 price quote", { error });

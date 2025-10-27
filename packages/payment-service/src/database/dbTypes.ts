@@ -371,7 +371,12 @@ export type AuditChangeReason =
   | "arns_account_creation"
   | "arns_purchase_order"
   | "approved_arns_purchase_order"
-  | "arns_purchase_order_failed";
+  | "arns_purchase_order_failed"
+  | "x402_payment"
+  | "x402_topup"
+  | "x402_hybrid_excess"
+  | "x402_overpayment_refund"
+  | "x402_fraud_penalty";
 
 export interface AuditLogInsert {
   user_address: string;
