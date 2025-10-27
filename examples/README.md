@@ -13,7 +13,73 @@ The x402 protocol enables HTTP-native payments using USDC on EVM chains (Base, E
 
 ## Examples
 
-### 1. Node.js CLI Example (`x402-upload-example.js`)
+### 1. Complete Browser Example (`x402-complete-upload.html`) ⭐ RECOMMENDED
+
+**The complete solution!** Creates ANS-104 data items signed with Ethereum and pays with USDC.
+
+#### What Makes This Complete?
+
+This example handles **both required signatures** using a **single Ethereum wallet**:
+
+1. **Data Item Signature** - Signs your file with Ethereum key (creates ANS-104 bundle)
+2. **Payment Signature** - Signs USDC payment authorization (via x402)
+
+**Both use the same MetaMask wallet!** No Arweave wallet needed.
+
+#### How It Works
+
+```javascript
+// Step 1: Create ANS-104 data item
+const dataItem = arbundles.DataItem.blank();
+dataItem.data = fileData;
+dataItem.addTag('Content-Type', 'image/jpeg');
+
+// Step 2: Sign with Ethereum wallet (signatureType 3)
+const ethSigner = new EthereumSigner(metamaskSigner);
+await dataItem.sign(ethSigner);  // ← MetaMask prompt #1
+
+// Step 3: Get signed bytes
+const signedDataItem = dataItem.getRaw();
+
+// Step 4: Upload with x402 payment
+const response = await x402fetch(uploadUrl, {
+  body: signedDataItem,      // ← Properly signed ANS-104 bundle
+  signer: metamaskSigner,    // ← Same wallet for payment! Prompt #2
+});
+```
+
+#### User Experience
+
+The user will see **two MetaMask popups**:
+
+1. **First popup:** "Sign message" - Creating the data item signature
+2. **Second popup:** "Sign typed data" - Authorizing the USDC payment
+
+#### Features
+
+- ✅ **One wallet for everything** - No Arweave wallet needed
+- ✅ **Proper ANS-104 bundles** - Upload service accepts it
+- ✅ **Ethereum signatures** - SignatureType 3 supported by Turbo
+- ✅ **Automatic payment** - x402fetch handles USDC authorization
+- ✅ **Optional tags** - Add Content-Type, File-Name, etc.
+- ✅ **No build step** - Open HTML file and go!
+
+#### Installation
+
+```bash
+# Just open it!
+open examples/x402-complete-upload.html
+```
+
+#### Libraries Used
+
+- `arbundles` - Creates and signs ANS-104 data items
+- `ethers.js` - Ethereum wallet interaction
+- `@coinbase/x402` - Automatic x402 payment handling
+
+---
+
+### 2. Node.js CLI Example (`x402-upload-example.js`)
 
 A command-line tool for uploading files from Node.js.
 
@@ -95,7 +161,7 @@ node x402-upload-example.js /path/to/file
 
 ---
 
-### 2. Browser Example with x402fetch (`x402-browser-upload-with-x402fetch.html`) ⭐ RECOMMENDED
+### 3. Browser Example with x402fetch (`x402-browser-upload-with-x402fetch.html`)
 
 **The easiest way!** Uses Coinbase's official `x402fetch` library that automatically handles the entire payment flow.
 
@@ -206,7 +272,7 @@ const response = await x402fetch(url, {
 
 ---
 
-### 3. Browser Example - Manual (`x402-browser-upload.html`)
+### 4. Browser Example - Manual (`x402-browser-upload.html`)
 
 A web-based interface showing the **manual x402 implementation** (for educational purposes).
 
