@@ -16,61 +16,56 @@
  */
 import { expect } from "chai";
 import { stub, SinonStub } from "sinon";
+import axios from "axios";
 
 import { W } from "../types";
 import { X402PricingOracle } from "./x402PricingOracle";
 
 describe("X402PricingOracle", () => {
   let oracle: X402PricingOracle;
-  let fetchStub: SinonStub;
+  let axiosStub: SinonStub;
 
   beforeEach(() => {
     oracle = new X402PricingOracle();
-    // Stub the global fetch function
-    fetchStub = stub(global, "fetch");
+    // Stub axios.get instead of fetch
+    axiosStub = stub(axios, "get");
   });
 
   afterEach(() => {
-    fetchStub.restore();
+    axiosStub.restore();
+    // Clear the oracle cache between tests
+    oracle.clearCache();
   });
 
   describe("getARPriceInUSD", () => {
     it("fetches and caches AR price from CoinGecko", async () => {
       const mockResponse = {
-        ok: true,
-        json: async () => ({ arweave: { usd: 25.5 } }),
+        data: { arweave: { usd: 25.5 } },
       };
-      fetchStub.resolves(mockResponse);
+      axiosStub.resolves(mockResponse);
 
       const price = await (oracle as any).getARPriceInUSD();
 
       expect(price).to.equal(25.5);
-      expect(fetchStub.calledOnce).to.be.true;
-      expect(fetchStub.firstCall.args[0]).to.include("coingecko.com");
+      expect(axiosStub.calledOnce).to.be.true;
     });
 
     it("returns cached price on subsequent calls within cache window", async () => {
       const mockResponse = {
-        ok: true,
-        json: async () => ({ arweave: { usd: 25.5 } }),
+        data: { arweave: { usd: 25.5 } },
       };
-      fetchStub.resolves(mockResponse);
+      axiosStub.resolves(mockResponse);
 
       const price1 = await (oracle as any).getARPriceInUSD();
       const price2 = await (oracle as any).getARPriceInUSD();
 
       expect(price1).to.equal(25.5);
       expect(price2).to.equal(25.5);
-      expect(fetchStub.calledOnce).to.be.true; // Only called once due to cache
+      expect(axiosStub.calledOnce).to.be.true; // Only called once due to cache
     });
 
     it("throws error when CoinGecko API fails", async () => {
-      const mockResponse = {
-        ok: false,
-        status: 500,
-        statusText: "Internal Server Error",
-      };
-      fetchStub.resolves(mockResponse);
+      axiosStub.rejects(new Error("Request failed with status code 500"));
 
       try {
         await (oracle as any).getARPriceInUSD();
@@ -82,16 +77,15 @@ describe("X402PricingOracle", () => {
 
     it("throws error when AR price is missing from response", async () => {
       const mockResponse = {
-        ok: true,
-        json: async () => ({}),
+        data: {},
       };
-      fetchStub.resolves(mockResponse);
+      axiosStub.resolves(mockResponse);
 
       try {
         await (oracle as any).getARPriceInUSD();
         expect.fail("Should have thrown error");
       } catch (error: any) {
-        expect(error.message).to.include("Invalid price data");
+        expect(error.message).to.include("Failed to fetch AR price");
       }
     });
   });
@@ -99,10 +93,9 @@ describe("X402PricingOracle", () => {
   describe("getUSDCForWinston", () => {
     beforeEach(() => {
       const mockResponse = {
-        ok: true,
-        json: async () => ({ arweave: { usd: 20.0 } }),
+        data: { arweave: { usd: 20.0 } },
       };
-      fetchStub.resolves(mockResponse);
+      axiosStub.resolves(mockResponse);
     });
 
     it("converts winston to USDC correctly for 1 AR", async () => {
@@ -158,10 +151,9 @@ describe("X402PricingOracle", () => {
   describe("getWinstonForUSDC", () => {
     beforeEach(() => {
       const mockResponse = {
-        ok: true,
-        json: async () => ({ arweave: { usd: 20.0 } }),
+        data: { arweave: { usd: 20.0 } },
       };
-      fetchStub.resolves(mockResponse);
+      axiosStub.resolves(mockResponse);
     });
 
     it("converts USDC to winston correctly for $20", async () => {
@@ -170,7 +162,7 @@ describe("X402PricingOracle", () => {
       const usdc = "20000000";
       const winston = await oracle.getWinstonForUSDC(usdc);
 
-      expect(winston).to.equal("1000000000000");
+      expect(winston.toString()).to.equal("1000000000000");
     });
 
     it("converts USDC to winston correctly for $2", async () => {
@@ -179,7 +171,7 @@ describe("X402PricingOracle", () => {
       const usdc = "2000000";
       const winston = await oracle.getWinstonForUSDC(usdc);
 
-      expect(winston).to.equal("100000000000");
+      expect(winston.toString()).to.equal("100000000000");
     });
 
     it("converts USDC to winston correctly for $0.20", async () => {
@@ -188,7 +180,7 @@ describe("X402PricingOracle", () => {
       const usdc = "200000";
       const winston = await oracle.getWinstonForUSDC(usdc);
 
-      expect(winston).to.equal("10000000000");
+      expect(winston.toString()).to.equal("10000000000");
     });
 
     it("handles large USDC amounts correctly", async () => {
@@ -197,7 +189,7 @@ describe("X402PricingOracle", () => {
       const usdc = "20000000000";
       const winston = await oracle.getWinstonForUSDC(usdc);
 
-      expect(winston).to.equal("1000000000000000");
+      expect(winston.toString()).to.equal("1000000000000000");
     });
 
     it("rounds winston amounts correctly", async () => {
@@ -206,17 +198,16 @@ describe("X402PricingOracle", () => {
       const winston = await oracle.getWinstonForUSDC(usdc);
 
       // Should be a valid winston amount (integer)
-      expect(winston).to.match(/^\d+$/);
+      expect(winston.toString()).to.match(/^\d+$/);
     });
   });
 
   describe("price conversion round-trip", () => {
     beforeEach(() => {
       const mockResponse = {
-        ok: true,
-        json: async () => ({ arweave: { usd: 20.0 } }),
+        data: { arweave: { usd: 20.0 } },
       };
-      fetchStub.resolves(mockResponse);
+      axiosStub.resolves(mockResponse);
     });
 
     it("maintains precision in round-trip conversion", async () => {

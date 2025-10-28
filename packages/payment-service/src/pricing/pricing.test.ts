@@ -56,7 +56,9 @@ describe("TurboPricingService class", () => {
     let clock: SinonFakeTimers;
 
     after(() => {
-      clock.restore();
+      if (clock) {
+        clock.restore();
+      }
     });
 
     beforeEach(() => {
@@ -101,7 +103,9 @@ describe("TurboPricingService class", () => {
       });
 
       afterEach(() => {
-        clock.restore();
+        if (clock) {
+          clock.restore();
+        }
       });
 
       it("returns the expected price for a given byte count larger than the discount", async () => {

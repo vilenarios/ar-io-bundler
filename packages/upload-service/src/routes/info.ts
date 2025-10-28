@@ -28,6 +28,12 @@ export async function rootResponse(ctx: KoaContext, next: Next) {
   const signingWalletAddress = jwkToPublicArweaveAddress(
     await ctx.state.getArweaveWallet()
   );
+
+  // Get public-facing gateway FQDNs from environment
+  const gateways = process.env.PUBLIC_GATEWAY_FQDNS
+    ? process.env.PUBLIC_GATEWAY_FQDNS.split(",").map((url) => url.trim())
+    : [publicAccessGatewayUrl.origin];
+
   ctx.body = {
     version: receiptVersion,
     addresses: {
@@ -37,7 +43,8 @@ export async function rootResponse(ctx: KoaContext, next: Next) {
       matic: process.env.MATIC_ADDRESS,
       kyve: process.env.KYVE_ADDRESS,
     },
-    gateway: publicAccessGatewayUrl.origin,
+    gateway: gateways[0], // Primary gateway
+    gateways: gateways, // All gateways
     freeUploadLimitBytes: freeUploadLimitBytes,
   };
   return next();

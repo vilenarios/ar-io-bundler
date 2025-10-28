@@ -48,7 +48,7 @@ describe("X402Service", () => {
     let validPaymentHeader: string;
 
     beforeEach(() => {
-      const validBefore = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
+      const validBefore = Math.floor(Date.now() / 1000) + 7200; // 2 hours from now (well within timeout)
       requirements = {
         scheme: "eip-3009",
         network: "base-mainnet",
@@ -186,13 +186,27 @@ describe("X402Service", () => {
     });
 
     it("rejects payment with expired requirements", async () => {
+      // Create a short-lived authorization that will fail the timeout check
+      const shortValidBefore = Math.floor(Date.now() / 1000) + 1800; // 30 minutes from now
+      const shortPayload = {
+        ...validPaymentPayload,
+        payload: {
+          ...validPaymentPayload.payload,
+          authorization: {
+            ...validPaymentPayload.payload.authorization,
+            validBefore: shortValidBefore,
+          },
+        },
+      };
+      const shortHeader = Buffer.from(JSON.stringify(shortPayload)).toString("base64");
+
       const expiredRequirements = {
         ...requirements,
-        maxTimeoutSeconds: -3600, // Negative timeout (expired)
+        maxTimeoutSeconds: 7200, // Requires 2 hours, but authorization only has 30 minutes
       };
 
       const result = await service.verifyPayment(
-        validPaymentHeader,
+        shortHeader,
         expiredRequirements
       );
 
@@ -218,7 +232,8 @@ describe("X402Service", () => {
       const result = await service.verifyPayment(invalidHeader, requirements);
 
       expect(result.isValid).to.be.false;
-      expect(result.invalidReason).to.include("expired");
+      // Note: validBefore in the past triggers "expires too soon" before the explicit "expired" check
+      expect(result.invalidReason).to.include("expires too soon");
     });
 
     it("rejects payment with invalid signature", async () => {
