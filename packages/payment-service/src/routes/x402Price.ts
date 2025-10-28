@@ -160,21 +160,23 @@ export async function x402PriceRoute(ctx: KoaContext, next: Next) {
     });
 
     // Browser detection: Check if client expects HTML response
-    // This follows the x402 standard pattern for content negotiation
+    // Per x402 standard: price quote endpoints return 200 OK (not 402)
+    // 402 is only for the actual protected resource (upload endpoint)
     const acceptHeader = ctx.get("Accept") || "";
     const userAgent = ctx.get("User-Agent") || "";
     const isBrowserRequest =
       acceptHeader.includes("text/html") && userAgent.includes("Mozilla");
 
     // For browser clients, return HTML paywall (if configured)
-    // For API clients, return JSON (standard x402 response)
+    // For API clients, return JSON payment requirements
     if (isBrowserRequest && cdpClientKey) {
       logger.debug("Returning HTML paywall for browser client", {
         hasOnramp: !!cdpClientKey,
       });
 
-      ctx.status = 402;
-      ctx.set("X-Payment-Required", "x402-1");
+      // Per x402 standard: price quotes return 200 OK, not 402
+      // The 402 response happens at the upload endpoint when payment is required
+      ctx.status = 200;
       ctx.set("Content-Type", "text/html");
       ctx.body = generatePaywallHtml({
         paymentRequirement: accepts[0], // Use first enabled network
@@ -186,9 +188,10 @@ export async function x402PriceRoute(ctx: KoaContext, next: Next) {
       return next();
     }
 
-    // Standard x402 JSON response for API clients (unchanged behavior)
-    ctx.status = 402;
-    ctx.set("X-Payment-Required", "x402-1");
+    // Standard x402 payment requirements JSON for API clients
+    // Per x402 standard: price quote endpoint returns 200 OK with payment requirements
+    // The actual 402 response happens when client uploads without payment
+    ctx.status = 200;
     ctx.set("Content-Type", "application/json");
     ctx.body = response;
   } catch (error) {

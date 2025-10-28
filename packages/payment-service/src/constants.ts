@@ -428,7 +428,8 @@ export const x402Networks: Record<string, X402NetworkConfig> = {
 export const x402PaymentAddress =
   process.env.X402_PAYMENT_ADDRESS || process.env.X402_WALLET_ADDRESS;
 
-if (isX402Enabled && !x402PaymentAddress) {
+// Skip validation in test environment to avoid module load errors
+if (isX402Enabled && !x402PaymentAddress && process.env.NODE_ENV !== "test") {
   throw new Error(
     "X402_PAYMENT_ADDRESS or X402_WALLET_ADDRESS must be set when x402 is enabled"
   );

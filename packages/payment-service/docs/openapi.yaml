@@ -1156,7 +1156,22 @@ paths:
       tags:
         - x402
       summary: Get x402 payment requirements for upload
-      description: Returns a 402 Payment Required response with EIP-3009 payment requirements for uploading data of a given size. This is the first step in the x402 payment flow.
+      description: |
+        Returns payment requirements for uploading data of a given size. This is the first step in the x402 payment flow.
+
+        **Per x402 standard**: Price quote endpoints return **200 OK** (not 402). The actual 402 response happens at the protected resource (upload endpoint).
+
+        **Content Negotiation**:
+        - API clients (Accept: application/json) receive JSON payment requirements
+        - Browser clients (Accept: text/html) receive an interactive HTML paywall with Coinbase Onramp (if X_402_CDP_CLIENT_KEY is configured)
+
+        **Browser Paywall Features** (when X_402_CDP_CLIENT_KEY is set):
+        - Interactive payment authorization UI
+        - MetaMask wallet integration for EIP-712 signing
+        - Coinbase Onramp widget for purchasing USDC
+        - Automatic payment signature generation
+
+        The actual 402 Payment Required response is returned by the upload endpoint when a file upload is attempted without payment.
 
       parameters:
         - name: signatureType
@@ -1184,18 +1199,42 @@ paths:
             example: 1024
 
       responses:
-        "402":
-          description: Payment Required - Returns x402 payment requirements
-          headers:
-            X-Payment-Required:
-              schema:
-                type: string
-              description: x402 protocol version
-              example: "x402-1"
+        "200":
+          description: OK - Returns x402 payment requirements (per x402 standard for price quotes)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/X402PaymentRequiredResponse"
+              example:
+                x402Version: 1
+                accepts:
+                  - scheme: exact
+                    network: base-mainnet
+                    maxAmountRequired: "1000000"
+                    resource: "/v1/tx"
+                    description: "Upload data to Arweave via AR.IO Bundler"
+                    mimeType: "application/json"
+                    payTo: "0x6A0A10FFD285c971B841bee8892878c0d583Bf67"
+                    maxTimeoutSeconds: 300
+                    asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+                    extra:
+                      name: "USD Coin"
+                      version: "2"
+            text/html:
+              schema:
+                type: string
+                description: Interactive HTML paywall (for browser clients when X_402_CDP_CLIENT_KEY is configured)
+              example: |
+                <!DOCTYPE html>
+                <html>
+                  <head><title>AR.IO Bundler - Payment Required</title></head>
+                  <body>
+                    <h1>Payment Required</h1>
+                    <p>Amount: 0.001000 USDC on Base</p>
+                    <button>Connect Wallet & Authorize Payment</button>
+                    <button>Don't have USDC? Buy some first</button>
+                  </body>
+                </html>
 
         "400":
           description: Bad Request
