@@ -8,10 +8,47 @@ The x402 protocol enables HTTP-native, pay-as-you-go payments using USDC on EVM 
 
 ### How It Works
 
-1. **Get Price Quote** - Request upload cost in USDC from payment service (returns 402 Payment Required)
+1. **Get Price Quote** - Request upload cost in USDC from payment service (returns 200 OK with payment requirements)
 2. **Create Payment Authorization** - Sign an EIP-3009 USDC transfer authorization with EIP-712
 3. **Upload with Payment** - Send file with `X-PAYMENT` header containing the authorization
 4. **Automatic Settlement** - Payment service verifies signature and settles payment; upload service processes file
+5. **If Payment Missing** - Upload endpoint returns 402 Payment Required if no X-PAYMENT header provided
+
+**Note:** Per x402 standard, the price quote endpoint returns **200 OK**. The **402 Payment Required** response only happens when you attempt to upload without payment.
+
+### Browser Paywall (Optional Feature)
+
+The payment service can serve an **interactive HTML paywall** for browser clients, providing a user-friendly alternative to programmatic x402 integration:
+
+**Features:**
+- 🌐 **Automatic browser detection** - Serves HTML to browsers, JSON to APIs
+- 💰 **Coinbase Onramp integration** - Buy USDC directly in the payment flow
+- 🔐 **MetaMask integration** - One-click payment authorization
+- 🎨 **Beautiful UI** - Professional payment interface
+
+**Usage:**
+```bash
+# 1. Enable browser paywall (optional - set in payment service .env)
+X_402_CDP_CLIENT_KEY=your_coinbase_client_key
+
+# 2. Open price quote URL in browser
+open "http://localhost:4001/v1/x402/price/3/YOUR_ADDRESS?bytes=1024"
+
+# 3. Browser displays interactive paywall with:
+#    - Payment amount in USDC
+#    - "Connect Wallet & Authorize Payment" button
+#    - "Don't have USDC? Buy some first" button (Onramp)
+```
+
+**When to Use:**
+- Non-technical users who prefer visual interfaces
+- Users without USDC who need to buy it
+- Quick testing without writing code
+
+**When NOT to Use:**
+- Automated/programmatic uploads (use CLI/SDK examples)
+- Backend services (use Node.js example)
+- Batch uploads (use programmatic approach)
 
 ## Examples
 
@@ -184,6 +221,7 @@ console.log('Payment:', receipt.x402Payment);
 - ✅ **Library mode** - Export functions for use in your own code
 - ✅ **Complete error handling** - Production-grade error messages
 - ✅ **Balance checking** - Verifies USDC balance before upload
+- ✅ **Browser paywall fallback** - Suggests browser UI if USDC balance insufficient
 
 #### Installation
 
@@ -199,12 +237,15 @@ npm install ethers@6 axios arweave arbundles
 # Required: Your Ethereum wallet private key
 export ETH_PRIVATE_KEY="0x1234..."
 
+# Optional: Network (defaults to base-mainnet)
+export X402_NETWORK="base-mainnet"  # or "base-sepolia" for testing
+
 # Optional: Service URLs (defaults to localhost)
 export UPLOAD_SERVICE_URL="http://localhost:3001"
 export PAYMENT_SERVICE_URL="http://localhost:4001"
 
-# Optional: RPC URL (defaults to Base Sepolia)
-export BASE_SEPOLIA_RPC_URL="https://sepolia.base.org"
+# Optional: RPC URL (auto-selected based on network)
+export BASE_RPC_URL="https://mainnet.base.org"
 ```
 
 **Option 2: Edit Config Object**
@@ -313,8 +354,16 @@ Both examples interact with the AR.IO Bundler APIs. Full specifications availabl
 
 - `GET /v1/x402/price/{signatureType}/{address}?bytes=N`
   - Get payment requirements for uploading N bytes
-  - Returns 402 Payment Required with EIP-3009 requirements
+  - Returns **200 OK** with payment requirements (per x402 standard)
+  - **Content Negotiation:**
+    - API clients (Accept: application/json) → JSON with payment requirements
+    - Browser clients (Accept: text/html) → Interactive HTML paywall with Coinbase Onramp
   - Response includes USDC amount, contract address, recipient, timeout
+  - **Browser Paywall Features** (when X_402_CDP_CLIENT_KEY configured):
+    - MetaMask wallet connection
+    - EIP-712 payment signing UI
+    - Coinbase Onramp for buying USDC
+    - Automatic payment signature generation
 
 - `POST /v1/x402/payment/{signatureType}/{address}`
   - Verify and settle x402 payment

@@ -1,19 +1,33 @@
 /**
  * Example: Upload a file to AR.IO Bundler using Coinbase x402 payment protocol
  *
- * This example demonstrates how to:
- * 1. Get a price quote for an upload
+ * This example demonstrates the programmatic x402 payment flow:
+ * 1. Get a price quote for an upload (200 OK with payment requirements)
  * 2. Create an EIP-3009 USDC transfer authorization
  * 3. Sign it with EIP-712
- * 4. Upload a file with x402 payment
+ * 4. Upload a file with x402 payment (X-PAYMENT header)
+ *
+ * Alternative: Browser Paywall
+ * If you prefer a visual interface to buy USDC and authorize payment:
+ * 1. Open the price quote URL in your browser (see --help for URL format)
+ * 2. Connect MetaMask wallet
+ * 3. Use Coinbase Onramp to buy USDC if needed
+ * 4. Authorize payment with one click
  *
  * Requirements:
  * - Node.js v18+
  * - ethers v6
  * - axios
  * - arweave
+ * - USDC on Base (mainnet or Sepolia testnet)
+ * - Ethereum wallet with Base network configured
  *
  * Install: npm install ethers@6 axios arweave
+ *
+ * Usage:
+ *   export ETH_PRIVATE_KEY=your_private_key
+ *   export X402_NETWORK=base-mainnet  # or base-sepolia for testing
+ *   node x402-upload-example.js ./my-file.txt
  */
 
 const { ethers } = require('ethers');
@@ -24,23 +38,31 @@ const fs = require('fs');
 // Configuration
 const CONFIG = {
   // Upload service URL
-  uploadServiceUrl: process.env.UPLOAD_SERVICE_URL || 'http://localhost:3000',
+  uploadServiceUrl: process.env.UPLOAD_SERVICE_URL || 'http://localhost:3001',
 
   // Payment service URL
-  paymentServiceUrl: process.env.PAYMENT_SERVICE_URL || 'http://localhost:4000',
+  paymentServiceUrl: process.env.PAYMENT_SERVICE_URL || 'http://localhost:4001',
 
-  // Network configuration (Base Sepolia testnet for testing)
-  network: 'base-sepolia',
-  chainId: 84532,
+  // Network configuration
+  // Use 'base-mainnet' for production (requires real USDC)
+  // Use 'base-sepolia' for testing (testnet USDC)
+  network: process.env.X402_NETWORK || 'base-mainnet',
+  chainId: process.env.X402_NETWORK === 'base-sepolia' ? 84532 : 8453,
 
-  // USDC contract address on Base Sepolia
-  usdcAddress: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+  // USDC contract address (auto-selected based on network)
+  usdcAddress: process.env.X402_NETWORK === 'base-sepolia'
+    ? '0x036CbD53842c5426634e7929541eC2318f3dCF7e'  // Base Sepolia testnet
+    : '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // Base mainnet
 
   // Your Ethereum wallet private key (NEVER commit this!)
   privateKey: process.env.ETH_PRIVATE_KEY || 'YOUR_PRIVATE_KEY_HERE',
 
-  // RPC URL for Base Sepolia
-  rpcUrl: process.env.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org',
+  // RPC URL (auto-selected based on network)
+  rpcUrl: process.env.BASE_RPC_URL || (
+    process.env.X402_NETWORK === 'base-sepolia'
+      ? 'https://sepolia.base.org'
+      : 'https://mainnet.base.org'
+  ),
 };
 
 // EIP-712 Domain for USDC transferWithAuthorization
@@ -65,26 +87,33 @@ const EIP712_TYPES = {
 
 /**
  * Step 1: Get price quote from payment service
+ *
+ * Per x402 standard: Price quote endpoints return 200 OK with payment requirements.
+ * The 402 response only happens when you actually try to upload without payment.
  */
-async function getPriceQuote(filePath, signatureType = 1) {
+async function getPriceQuote(filePath, userAddress, signatureType = 3) {
   const fileSize = fs.statSync(filePath).size;
 
-  // For demo, using a placeholder address - in production, derive from your Arweave key
-  const arweaveAddress = 'YOUR_ARWEAVE_ADDRESS_HERE';
-
   console.log(`📊 Getting price quote for ${fileSize} bytes...`);
+  console.log(`   User address: ${userAddress}`);
 
   try {
     const response = await axios.get(
-      `${CONFIG.paymentServiceUrl}/v1/x402/price/${signatureType}/${arweaveAddress}`,
+      `${CONFIG.paymentServiceUrl}/v1/x402/price/${signatureType}/${userAddress}`,
       {
         params: { bytes: fileSize },
-        validateStatus: (status) => status === 402, // x402 returns 402
+        validateStatus: (status) => status === 200, // Price quotes return 200 OK
       }
     );
 
     console.log('✅ Price quote received');
     console.log(`   Networks available: ${response.data.accepts.map(a => a.network).join(', ')}`);
+
+    // Show pricing for each network
+    response.data.accepts.forEach(req => {
+      const usdcAmount = ethers.formatUnits(req.maxAmountRequired, 6);
+      console.log(`   ${req.network}: ${usdcAmount} USDC`);
+    });
 
     return response.data;
   } catch (error) {
@@ -134,18 +163,23 @@ async function createX402Payment(priceQuote) {
     authorization
   );
 
-  // Create x402 payment payload
+  // Create x402 payment payload per standard
   const paymentPayload = {
-    x402Version: 1,
-    scheme: 'eip-3009',
-    network: CONFIG.network,
-    payload: {
-      signature,
-      authorization,
+    scheme: requirements.scheme,
+    network: requirements.network,
+    authorization: {
+      from: authorization.from,
+      to: authorization.to,
+      value: authorization.value.toString(),
+      validAfter: authorization.validAfter.toString(),
+      validBefore: authorization.validBefore.toString(),
+      nonce: authorization.nonce,
+      signature: signature,
     },
+    asset: requirements.asset,
   };
 
-  // Encode as base64
+  // Encode as base64 for X-PAYMENT header
   const paymentHeader = Buffer.from(JSON.stringify(paymentPayload)).toString('base64');
 
   console.log('✅ Payment authorization created and signed');
@@ -263,6 +297,11 @@ async function main() {
   if (!filePath) {
     console.error('Usage: node x402-upload-example.js <file-path>');
     console.error('Example: node x402-upload-example.js ./my-file.txt');
+    console.error('\nEnvironment Variables:');
+    console.error('  ETH_PRIVATE_KEY      - Your Ethereum private key (required)');
+    console.error('  X402_NETWORK         - Network: base-mainnet or base-sepolia (default: base-mainnet)');
+    console.error('  UPLOAD_SERVICE_URL   - Upload service URL (default: http://localhost:3001)');
+    console.error('  PAYMENT_SERVICE_URL  - Payment service URL (default: http://localhost:4001)');
     process.exit(1);
   }
 
@@ -271,26 +310,68 @@ async function main() {
     process.exit(1);
   }
 
-  console.log('🚀 AR.IO x402 Upload Example\n');
+  if (CONFIG.privateKey === 'YOUR_PRIVATE_KEY_HERE') {
+    console.error('❌ Error: ETH_PRIVATE_KEY environment variable not set');
+    console.error('   Set it with: export ETH_PRIVATE_KEY=your_private_key');
+    process.exit(1);
+  }
+
+  console.log('🚀 AR.IO Bundler x402 Upload Example');
+  console.log(`   Network: ${CONFIG.network}`);
+  console.log(`   Chain ID: ${CONFIG.chainId}`);
+  console.log(`   USDC Contract: ${CONFIG.usdcAddress}\n`);
 
   try {
+    // Get wallet address
+    const wallet = new ethers.Wallet(CONFIG.privateKey);
+    console.log(`🔑 Wallet: ${wallet.address}\n`);
+
     // Check USDC balance
-    await checkUSDCBalance();
+    const balance = await checkUSDCBalance();
+    console.log();
 
-    // Step 1: Get price quote
-    const priceQuote = await getPriceQuote(filePath);
+    // Step 1: Get price quote (returns 200 OK per x402 standard)
+    const priceQuote = await getPriceQuote(filePath, wallet.address);
+    console.log();
 
-    // Step 2: Create and sign payment
-    const { paymentHeader } = await createX402Payment(priceQuote);
+    // Step 2: Create and sign payment authorization (EIP-712 + EIP-3009)
+    const { paymentHeader, requirements } = await createX402Payment(priceQuote);
+    console.log();
 
-    // Step 3: Upload file
+    // Check if we have enough USDC
+    const requiredAmount = BigInt(requirements.maxAmountRequired);
+    if (balance < requiredAmount) {
+      const shortfall = ethers.formatUnits(requiredAmount - balance, 6);
+      console.error(`❌ Insufficient USDC balance. Need ${shortfall} more USDC.`);
+      console.error(`\n💡 Tip: You can use the browser paywall to buy USDC:`);
+      console.error(`   Open: ${CONFIG.paymentServiceUrl}/v1/x402/price/3/${wallet.address}?bytes=${fs.statSync(filePath).size}`);
+      console.error(`   in your browser and click "Don't have USDC? Buy some first"`);
+      process.exit(1);
+    }
+
+    // Step 3: Upload file with x402 payment
+    // If upload fails with 402, it means the payment wasn't accepted
     const receipt = await uploadWithX402(filePath, paymentHeader);
 
     console.log('\n✨ Success! Your file has been uploaded and paid for with USDC.');
+    console.log(`   Data Item ID: ${receipt.id}`);
     console.log(`   View on Arweave: https://arweave.net/${receipt.id}`);
+
+    if (receipt.x402Payment) {
+      console.log(`\n💰 Payment Details:`);
+      console.log(`   Payment ID: ${receipt.x402Payment.paymentId}`);
+      console.log(`   Network: ${receipt.x402Payment.network}`);
+      console.log(`   Mode: ${receipt.x402Payment.mode}`);
+    }
 
   } catch (error) {
     console.error('\n💥 Error:', error.message);
+    if (error.response?.status === 402) {
+      console.error('\n📝 Note: Received 402 Payment Required. This means:');
+      console.error('   - Your payment authorization was not accepted');
+      console.error('   - You may need to approve USDC spending first');
+      console.error('   - Or check that you have sufficient USDC balance');
+    }
     process.exit(1);
   }
 }
