@@ -21,6 +21,7 @@ import {
   x402PaymentAddress,
   x402PaymentTimeoutMs,
   x402PricingBufferPercent,
+  cdpClientKey,
 } from "../constants";
 import { BadQueryParam } from "../database/errors";
 import { X402PricingOracle } from "../pricing/x402PricingOracle";
@@ -29,6 +30,7 @@ import { UserAddressType } from "../database/dbTypes";
 import { ByteCount } from "../types/byteCount";
 import { W } from "../types";
 import { X402PaymentRequiredResponse } from "../x402/x402Service";
+import { generatePaywallHtml } from "./x402PaywallHtml";
 
 /**
  * Get x402 payment requirements for an upload
@@ -157,7 +159,34 @@ export async function x402PriceRoute(ctx: KoaContext, next: Next) {
       networksAvailable: enabledNetworks.length,
     });
 
-    // x402 standard: return 402 Payment Required
+    // Browser detection: Check if client expects HTML response
+    // This follows the x402 standard pattern for content negotiation
+    const acceptHeader = ctx.get("Accept") || "";
+    const userAgent = ctx.get("User-Agent") || "";
+    const isBrowserRequest =
+      acceptHeader.includes("text/html") && userAgent.includes("Mozilla");
+
+    // For browser clients, return HTML paywall (if configured)
+    // For API clients, return JSON (standard x402 response)
+    if (isBrowserRequest && cdpClientKey) {
+      logger.debug("Returning HTML paywall for browser client", {
+        hasOnramp: !!cdpClientKey,
+      });
+
+      ctx.status = 402;
+      ctx.set("X-Payment-Required", "x402-1");
+      ctx.set("Content-Type", "text/html");
+      ctx.body = generatePaywallHtml({
+        paymentRequirement: accepts[0], // Use first enabled network
+        cdpClientKey: cdpClientKey,
+        appName: "AR.IO Bundler",
+        // appLogo can be added via env var if desired
+      });
+
+      return next();
+    }
+
+    // Standard x402 JSON response for API clients (unchanged behavior)
     ctx.status = 402;
     ctx.set("X-Payment-Required", "x402-1");
     ctx.set("Content-Type", "application/json");

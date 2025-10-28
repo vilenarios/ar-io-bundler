@@ -448,3 +448,14 @@ export const x402PricingBufferPercent = +(
 export const x402FraudTolerancePercent = +(
   process.env.X402_FRAUD_TOLERANCE_PERCENT ?? 5
 );
+
+// Coinbase CDP API credentials (required for mainnet facilitator)
+// Get CDP credentials from: https://portal.cdp.coinbase.com/
+export const cdpApiKeyId = process.env.CDP_API_KEY_ID;
+export const cdpApiKeySecret = process.env.CDP_API_KEY_SECRET;
+
+// Coinbase CDP Client Key (optional, for browser Onramp integration)
+// This is the PUBLIC client key (safe for browser/client-side use)
+// Used to enable Coinbase Onramp widget in browser paywall
+// Leave empty to disable Onramp (payment still works without it)
+export const cdpClientKey = process.env.X_402_CDP_CLIENT_KEY;
