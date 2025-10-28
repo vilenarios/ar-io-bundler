@@ -384,7 +384,7 @@ export async function dataItemRoute(ctx: KoaContext, next: Next) {
           nativeAddress,
         });
 
-        MetricRegistry.x402PaymentRequired.inc();
+        // MetricRegistry.x402PaymentRequired.inc(); // TODO: Add metric
         return next();
       } catch (error) {
         logger.error("Failed to get x402 price quote", { error });

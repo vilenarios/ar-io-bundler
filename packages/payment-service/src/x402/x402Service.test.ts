@@ -15,7 +15,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 import { expect } from "chai";
-import { stub, SinonStub } from "sinon";
+import { stub } from "sinon";
 import { ethers } from "ethers";
 
 import { X402NetworkConfig } from "../constants";
@@ -37,7 +37,6 @@ describe("X402Service", () => {
         rpcUrl: "https://mainnet.base.org",
         enabled: true,
         minConfirmations: 1,
-        facilitatorAddress: "0x1234567890123456789012345678901234567890",
       },
     };
     service = new X402Service(mockNetworks);
@@ -54,9 +53,12 @@ describe("X402Service", () => {
         scheme: "eip-3009",
         network: "base-mainnet",
         maxAmountRequired: "1000000", // 1 USDC
+        resource: "/v1/tx",
+        description: "Upload data to Arweave",
+        mimeType: "application/octet-stream",
         asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
         payTo: "0x1234567890123456789012345678901234567890",
-        timeout: { validBefore: Date.now() + 3600000 },
+        maxTimeoutSeconds: 3600,
         extra: { name: "USDC", version: "2" },
       };
 
@@ -186,7 +188,7 @@ describe("X402Service", () => {
     it("rejects payment with expired requirements", async () => {
       const expiredRequirements = {
         ...requirements,
-        timeout: { validBefore: Date.now() - 1000 }, // 1 second ago
+        maxTimeoutSeconds: -3600, // Negative timeout (expired)
       };
 
       const result = await service.verifyPayment(
@@ -195,7 +197,7 @@ describe("X402Service", () => {
       );
 
       expect(result.isValid).to.be.false;
-      expect(result.invalidReason).to.include("expired");
+      expect(result.invalidReason).to.include("expires too soon");
     });
 
     it("rejects payment with expired authorization", async () => {
@@ -278,58 +280,8 @@ describe("X402Service", () => {
     });
   });
 
-  describe("createPaymentRequirements", () => {
-    it("creates valid payment requirements for USDC payment", () => {
-      const usdcAmount = "1000000"; // 1 USDC
-      const payToAddress = "0x1234567890123456789012345678901234567890";
-      const network = "base-mainnet";
-
-      const requirements = service.createPaymentRequirements(
-        usdcAmount,
-        payToAddress,
-        network
-      );
-
-      expect(requirements.scheme).to.equal("eip-3009");
-      expect(requirements.network).to.equal("base-mainnet");
-      expect(requirements.maxAmountRequired).to.equal(usdcAmount);
-      expect(requirements.payTo).to.equal(payToAddress);
-      expect(requirements.asset).to.equal(
-        mockNetworks["base-mainnet"].usdcAddress
-      );
-      expect(requirements.timeout.validBefore).to.be.greaterThan(Date.now());
-      expect(requirements.extra).to.deep.equal({
-        name: "USDC",
-        version: "2",
-      });
-    });
-
-    it("sets timeout 5 minutes in the future", () => {
-      const requirements = service.createPaymentRequirements(
-        "1000000",
-        "0x1234567890123456789012345678901234567890",
-        "base-mainnet"
-      );
-
-      const fiveMinutesFromNow = Date.now() + 5 * 60 * 1000;
-      const tenSecondsFromFiveMinutes = fiveMinutesFromNow + 10000;
-
-      expect(requirements.timeout.validBefore).to.be.greaterThan(Date.now());
-      expect(requirements.timeout.validBefore).to.be.lessThan(
-        tenSecondsFromFiveMinutes
-      );
-    });
-
-    it("throws error for unsupported network", () => {
-      expect(() =>
-        service.createPaymentRequirements(
-          "1000000",
-          "0x1234567890123456789012345678901234567890",
-          "unsupported-network"
-        )
-      ).to.throw("Unsupported network");
-    });
-  });
+  // Note: createPaymentRequirements tests removed as the method
+  // is implemented in the route handlers, not in X402Service class
 
   describe("network configuration", () => {
     it("only initializes providers for enabled networks", () => {

@@ -141,10 +141,11 @@ export class X402Service {
       }
 
       // Validate timeout
-      if (Date.now() > requirements.timeout.validBefore) {
+      const maxValidTime = Date.now() / 1000 + requirements.maxTimeoutSeconds;
+      if (authorization.validBefore < maxValidTime) {
         return {
           isValid: false,
-          invalidReason: "Payment requirements expired",
+          invalidReason: "Payment authorization expires too soon",
         };
       }
 

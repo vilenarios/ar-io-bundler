@@ -1,0 +1,5 @@
+JSON.parse(
+  readFileSync("tests/stubFiles/testWallet.json", {
+    encoding: "utf-8",
+  })
+

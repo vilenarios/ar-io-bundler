@@ -17,7 +17,7 @@
 import { expect } from "chai";
 import { stub, SinonStub } from "sinon";
 
-import { Winston } from "../types";
+import { W } from "../types";
 import { X402PricingOracle } from "./x402PricingOracle";
 
 describe("X402PricingOracle", () => {
@@ -42,7 +42,7 @@ describe("X402PricingOracle", () => {
       };
       fetchStub.resolves(mockResponse);
 
-      const price = await oracle.getARPriceInUSD();
+      const price = await (oracle as any).getARPriceInUSD();
 
       expect(price).to.equal(25.5);
       expect(fetchStub.calledOnce).to.be.true;
@@ -56,8 +56,8 @@ describe("X402PricingOracle", () => {
       };
       fetchStub.resolves(mockResponse);
 
-      const price1 = await oracle.getARPriceInUSD();
-      const price2 = await oracle.getARPriceInUSD();
+      const price1 = await (oracle as any).getARPriceInUSD();
+      const price2 = await (oracle as any).getARPriceInUSD();
 
       expect(price1).to.equal(25.5);
       expect(price2).to.equal(25.5);
@@ -73,7 +73,7 @@ describe("X402PricingOracle", () => {
       fetchStub.resolves(mockResponse);
 
       try {
-        await oracle.getARPriceInUSD();
+        await (oracle as any).getARPriceInUSD();
         expect.fail("Should have thrown error");
       } catch (error: any) {
         expect(error.message).to.include("Failed to fetch AR price");
@@ -88,7 +88,7 @@ describe("X402PricingOracle", () => {
       fetchStub.resolves(mockResponse);
 
       try {
-        await oracle.getARPriceInUSD();
+        await (oracle as any).getARPriceInUSD();
         expect.fail("Should have thrown error");
       } catch (error: any) {
         expect(error.message).to.include("Invalid price data");
@@ -109,7 +109,7 @@ describe("X402PricingOracle", () => {
       // 1 AR = 1,000,000,000,000 Winston
       // 1 AR = $20
       // Expected USDC (6 decimals) = 20,000,000
-      const winston = "1000000000000" as Winston;
+      const winston = W("1000000000000");
       const usdc = await oracle.getUSDCForWinston(winston);
 
       expect(usdc).to.equal("20000000");
@@ -119,7 +119,7 @@ describe("X402PricingOracle", () => {
       // 0.1 AR = 100,000,000,000 Winston
       // 0.1 AR = $2
       // Expected USDC (6 decimals) = 2,000,000
-      const winston = "100000000000" as Winston;
+      const winston = W("100000000000");
       const usdc = await oracle.getUSDCForWinston(winston);
 
       expect(usdc).to.equal("2000000");
@@ -129,7 +129,7 @@ describe("X402PricingOracle", () => {
       // 0.01 AR = 10,000,000,000 Winston
       // 0.01 AR = $0.20
       // Expected USDC (6 decimals) = 200,000
-      const winston = "10000000000" as Winston;
+      const winston = W("10000000000");
       const usdc = await oracle.getUSDCForWinston(winston);
 
       expect(usdc).to.equal("200000");
@@ -137,18 +137,18 @@ describe("X402PricingOracle", () => {
 
     it("rounds up fractional USDC amounts", async () => {
       // Very small winston amount that results in fractional USDC
-      const winston = "1000000" as Winston; // 0.000001 AR
+      const winston = W("1000000"); // 0.000001 AR
       const usdc = await oracle.getUSDCForWinston(winston);
 
       // Even a tiny amount should round up to at least 1
-      expect(BigInt(usdc)).to.be.greaterThanOrEqual(BigInt(1));
+      expect(Number(usdc)).to.be.greaterThanOrEqual(1);
     });
 
     it("handles large winston amounts correctly", async () => {
       // 1000 AR = 1,000,000,000,000,000 Winston
       // 1000 AR = $20,000
       // Expected USDC (6 decimals) = 20,000,000,000
-      const winston = "1000000000000000" as Winston;
+      const winston = W("1000000000000000");
       const usdc = await oracle.getUSDCForWinston(winston);
 
       expect(usdc).to.equal("20000000000");
@@ -220,13 +220,13 @@ describe("X402PricingOracle", () => {
     });
 
     it("maintains precision in round-trip conversion", async () => {
-      const originalWinston = "1000000000000" as Winston; // 1 AR
+      const originalWinston = W("1000000000000"); // 1 AR
 
       // Convert to USDC and back
       const usdc = await oracle.getUSDCForWinston(originalWinston);
       const winstonBack = await oracle.getWinstonForUSDC(usdc);
 
-      expect(winstonBack).to.equal(originalWinston);
+      expect(winstonBack.toString()).to.equal(originalWinston.toString());
     });
   });
 });

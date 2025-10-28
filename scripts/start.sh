@@ -53,7 +53,9 @@ fi
 
 if [ "$NEEDS_BUILD" = true ]; then
   echo "   Building services..."
-  cd "$PROJECT_ROOT"
+  cd "$PROJECT_ROOT/packages/payment-service"
+  yarn build
+  cd "$PROJECT_ROOT/packages/upload-service"
   yarn build
   echo -e "${GREEN}✓${NC} Build complete"
 else
@@ -87,33 +89,19 @@ echo -e "${GREEN}✓${NC} Configuration files found"
 # Stop existing services if running
 echo ""
 echo "🔄 Checking for existing PM2 processes..."
-if pm2 list | grep -q "payment-service\|upload-api"; then
+if pm2 list | grep -q "payment-service\|upload-api\|upload-workers"; then
   echo "   Stopping existing processes..."
-  pm2 delete payment-service upload-api 2>/dev/null || true
+  pm2 delete payment-service upload-api upload-workers 2>/dev/null || true
   echo -e "${GREEN}✓${NC} Existing processes stopped"
 else
   echo -e "${GREEN}✓${NC} No existing processes"
 fi
 
-# Start Payment Service
+# Start all services using ecosystem file
 echo ""
-echo "🚀 Starting Payment Service (Port 4001)..."
-cd "$PROJECT_ROOT/packages/payment-service"
-PORT=4001 NODE_ENV=production pm2 start lib/index.js \
-  --name payment-service \
-  -i 2 \
-  --merge-logs \
-  --log-date-format "YYYY-MM-DD HH:mm:ss"
-
-# Start Upload Service
-echo ""
-echo "🚀 Starting Upload Service (Port 3001)..."
-cd "$PROJECT_ROOT/packages/upload-service"
-PORT=3001 NODE_ENV=production pm2 start lib/index.js \
-  --name upload-api \
-  -i 2 \
-  --merge-logs \
-  --log-date-format "YYYY-MM-DD HH:mm:ss"
+echo "🚀 Starting all services using PM2 ecosystem file..."
+cd "$PROJECT_ROOT"
+pm2 start ecosystem.config.js
 
 # Save PM2 configuration
 echo ""
@@ -147,6 +135,7 @@ echo "Useful Commands:"
 echo "  pm2 logs                  - View all logs"
 echo "  pm2 logs payment-service  - View payment service logs"
 echo "  pm2 logs upload-api       - View upload service logs"
+echo "  pm2 logs upload-workers   - View worker logs (bundling pipeline)"
 echo "  pm2 monit                 - Monitor processes"
 echo "  pm2 restart all           - Restart all services"
 echo "  pm2 stop all              - Stop all services"

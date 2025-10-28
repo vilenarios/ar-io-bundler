@@ -1,41 +1,70 @@
 #!/bin/bash
 
 #############################
-# Restart AR.IO Bundler Services
+# Restart AR.IO Bundler - FULL SYSTEM
+# Restarts Docker infrastructure AND PM2 services
 #############################
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 # Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  🔄 Restarting AR.IO Bundler Services"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-
-# Check if services are running
-if ! pm2 list | grep -q "payment-service\|upload-api"; then
-  echo -e "${YELLOW}⚠️  Services not running${NC}"
-  echo "   Use ./scripts/start.sh to start services"
-  exit 1
+# Parse arguments
+RESTART_DOCKER=false
+if [ "$1" = "--with-docker" ]; then
+  RESTART_DOCKER=true
 fi
 
-# Restart services
-echo "🔄 Restarting services..."
-pm2 restart payment-service upload-api
-
-echo ""
-echo -e "${GREEN}✓${NC} Services restarted"
-echo ""
-pm2 list
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  🔄 Restarting AR.IO Bundler"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+# Restart Docker infrastructure if requested
+if [ "$RESTART_DOCKER" = true ]; then
+  echo "🐳 Restarting Docker infrastructure..."
+  cd "$PROJECT_ROOT"
+  docker compose restart
+  echo "   Waiting for services to be ready..."
+  sleep 5
+  echo -e "${GREEN}✓${NC} Docker infrastructure restarted"
+  echo ""
+fi
+
+# Restart PM2 services
+echo "🔄 Restarting PM2 services..."
+if pm2 list | grep -q "payment-service\|upload-api\|upload-workers"; then
+  pm2 restart all
+  echo -e "${GREEN}✓${NC} PM2 services restarted"
+else
+  echo -e "${YELLOW}⚠️${NC}  No PM2 services running"
+  echo "   Starting services instead..."
+  echo ""
+  exec "$SCRIPT_DIR/start.sh"
+fi
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo -e "${GREEN}✅ System restarted${NC}"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "Status:"
+pm2 list
+echo ""
+docker compose ps 2>/dev/null || true
+echo ""
 echo "Commands:"
 echo "  pm2 logs           - View logs"
 echo "  pm2 monit          - Monitor processes"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "To restart with Docker infrastructure:"
+echo "  ./scripts/restart.sh --with-docker"
 echo ""

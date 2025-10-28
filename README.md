@@ -174,6 +174,7 @@ This script will:
 - ✅ Verify build status
 - ✅ Validate configuration
 - ✅ Start services with explicit PORT configuration
+- ✅ Start background workers for bundle processing
 - ✅ Save PM2 state
 - ✅ Display service status and URLs
 
@@ -188,7 +189,12 @@ PORT=4001 NODE_ENV=production pm2 start lib/index.js --name payment-service -i 2
 
 # Start Upload Service (Port 3001)
 cd /home/vilenarios/ar-io-bundler/packages/upload-service
-PORT=3001 NODE_ENV=production pm2 start lib/index.js --name upload-api -i 2
+PORT=3001 NODE_ENV=production pm2 start lib/server.js --name upload-api -i 2
+
+# Start Upload Workers (Background job processing)
+NODE_ENV=production pm2 start lib/workers/allWorkers.js \
+  --name upload-workers \
+  --interpreter-args "-r dotenv/config"
 
 # Save PM2 configuration for automatic restart
 pm2 save
@@ -208,7 +214,42 @@ pm2 startup
 - **6381**: Redis Queues
 - **9000-9001**: MinIO
 
-### Step 8: Verify Services
+**PM2 Processes**:
+- **payment-service** (2 instances): Payment processing API
+- **upload-api** (2 instances): Upload handling API
+- **upload-workers** (1 instance): Background job processing (plan, prepare, post, verify bundles)
+
+### Step 8: Setup Bundle Planning Cron Job
+
+The bundling pipeline requires periodic triggering to group uploaded data items into bundles. Set up a cron job to run bundle planning every 5 minutes:
+
+```bash
+cd /home/vilenarios/ar-io-bundler/packages/upload-service
+
+# The cron trigger script is already created
+# Add to crontab (runs every 5 minutes)
+(crontab -l 2>/dev/null | grep -v "trigger-plan" ; echo "*/5 * * * * /home/vilenarios/ar-io-bundler/packages/upload-service/cron-trigger-plan.sh >> /tmp/bundle-plan-cron.log 2>&1") | crontab -
+
+# Verify cron job
+crontab -l | grep trigger-plan
+```
+
+**What this does**: Every 5 minutes, the cron job triggers the plan worker to:
+1. Fetch pending data items from the database
+2. Group them into optimally-sized bundles
+3. Queue prepare → post → verify jobs
+4. Deliver bundles to Arweave
+
+**Monitor cron activity**:
+```bash
+# View cron logs
+tail -f /tmp/bundle-plan-cron.log
+
+# View worker processing
+pm2 logs upload-workers
+```
+
+### Step 9: Verify Services
 
 ```bash
 # Check PM2 status
@@ -500,6 +541,75 @@ The platform uses the following infrastructure components:
 | MinIO Console | 9001 | Web UI for MinIO |
 
 ## Troubleshooting
+
+### Bundled Data Items Not Accessible
+
+**Problem**: Bundle posted successfully but individual data items return "Not Found"
+
+**Root Cause**: Bundled data items require ANS-104 indexing to be individually accessible. Without proper indexing, only the bundle transaction is retrievable, not the individual data items inside.
+
+**Symptoms**:
+- Bundle transaction ID accessible on Arweave (e.g., `gjwfuchp0bUKk0ft-5Y2M0T1BSyrEtBMG5iC6rvzvLk`)
+- Individual data item IDs return 404/Not Found
+- GraphQL shows `bundledIn: null` for data items
+
+**Solution**:
+
+1. **Verify offsets are in database**:
+```bash
+cd packages/upload-service
+node -e "
+const knex = require('knex')(require('./lib/arch/db/knexConfig').getReaderConfig());
+(async () => {
+  const offsets = await knex('data_item_offsets').select('*').limit(10);
+  console.log('Offsets:', offsets);
+  await knex.destroy();
+})();
+"
+```
+
+2. **Check if AR.IO Gateway has ANS-104 indexing enabled** (if using local gateway)
+
+3. **Wait for external indexers**: If posting to public Arweave, indexers like arweave.net may take hours/days to index your bundles
+
+4. **Use Turbo's infrastructure**: Production deployments typically use Turbo's indexing infrastructure for immediate data item availability
+
+### Workers Not Processing Uploads
+
+**Problem**: Uploads succeed but bundles never get created
+
+**Symptoms**:
+- Data items stuck in `new_data_item` table
+- No entries in `planned_data_item` or `posted_bundle` tables
+- Worker logs show no activity
+
+**Solution**:
+
+1. **Verify workers are running**:
+```bash
+pm2 list | grep upload-workers
+# Should show: upload-workers │ online
+```
+
+2. **Check if cron job is configured**:
+```bash
+crontab -l | grep trigger-plan
+# Should show: */5 * * * * /path/to/cron-trigger-plan.sh
+```
+
+3. **Manually trigger bundle planning**:
+```bash
+cd packages/upload-service
+./cron-trigger-plan.sh
+
+# Watch worker logs
+pm2 logs upload-workers
+```
+
+4. **Check for database errors in worker logs**:
+```bash
+pm2 logs upload-workers --err --lines 50
+```
 
 ### Port Conflicts
 

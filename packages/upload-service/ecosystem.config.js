@@ -32,6 +32,7 @@ module.exports = {
       script: "./lib/workers/allWorkers.js",
       instances: process.env.WORKER_INSTANCES || 1,
       exec_mode: "fork", // Workers should not be clustered
+      interpreter_args: "-r dotenv/config",
       env: {
         NODE_ENV: "production",
       },

@@ -144,11 +144,12 @@ export async function x402PaymentRoute(ctx: KoaContext, next: Next) {
       scheme: "exact",
       network,
       maxAmountRequired: mode === "topup" ? authorization.value : usdcAmountRequired,
+      resource: "/v1/tx",
+      description: `Upload ${byteCount || 0} bytes to Arweave via Turbo`,
+      mimeType: "application/octet-stream",
       asset: networkConfig.usdcAddress,
       payTo: authorization.to,
-      timeout: {
-        validBefore: Date.now() + x402PaymentTimeoutMs,
-      },
+      maxTimeoutSeconds: Math.floor(x402PaymentTimeoutMs / 1000),
       extra: {
         name: "USD Coin",
         version: "2",

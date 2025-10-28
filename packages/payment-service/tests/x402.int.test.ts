@@ -123,7 +123,7 @@ describe("x402 Integration Tests", function () {
         // USDC amount should be a positive integer string
         const maxAmountRequired = accepts[0].maxAmountRequired;
         expect(maxAmountRequired).to.be.a("string");
-        expect(BigInt(maxAmountRequired)).to.be.greaterThan(BigInt(0));
+        expect(Number(maxAmountRequired)).to.be.greaterThan(0);
       }
     });
 

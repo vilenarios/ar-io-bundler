@@ -37,12 +37,7 @@ import {
   bufferIdFromReadableSignature,
 } from "../bundles/idFromSignature";
 import { signatureTypeInfo } from "../constants";
-import {
-  PremiumPaidFeatureType,
-  dedicatedBundleTypes,
-  gatewayUrl,
-  jobLabels,
-} from "../constants";
+import { gatewayUrl, jobLabels } from "../constants";
 import defaultLogger from "../logger";
 import { PlanId, PlannedDataItem } from "../types/dbTypes";
 import { JWKInterface } from "../types/jwkTypes";
@@ -259,23 +254,8 @@ export async function prepareBundleHandler(
   });
   bundleTx.addTag("Bundle-Format", "binary");
   bundleTx.addTag("Bundle-Version", "2.0.0");
-
-  const premiumFeatureType = dbDataItems[0].premiumFeatureType;
-  const bundlerAppName =
-    dedicatedBundleTypes[premiumFeatureType as PremiumPaidFeatureType]
-      ?.bundlerAppName ?? undefined;
-  if (bundlerAppName) {
-    bundleTx.addTag("Bundler-App-Name", bundlerAppName);
-  }
-
-  bundleTx.addTag("App-Name", process.env.APP_NAME ?? "ArDrive Turbo");
+  bundleTx.addTag("App-Name", process.env.APP_NAME ?? "AR.IO Bundler");
   bundleTx.addTag("App-Version", version);
-
-  // Mint $U
-  bundleTx.addTag("App-Name", "SmartWeaveAction");
-  bundleTx.addTag("App-Version", "0.3.0"); // cspell:disable
-  bundleTx.addTag("Contract", "KTzTXT_ANmF84fWEKHzWURD1LWd9QaFR9yfYUwH2Lxw"); // cspell:enable
-  bundleTx.addTag("Input", JSON.stringify({ function: "mint" }));
 
   await arweave.signTx(bundleTx, jwk);
 
