@@ -9,24 +9,29 @@ AR.IO Bundler is a comprehensive platform that packages [ANS-104](https://github
 ### Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    AR.IO Gateway (Optional)                  │
-│  Port 3000: Envoy Proxy | Port 4000: Core | Port 5050: Observer │
-│  ✅ Provides /price endpoint for pricing                    │
-│  ✅ Handles bundle transactions locally                     │
-└────────────────────┬────────────────────────────────────────┘
-                     │ Vertical Integration
-┌────────────────────▼────────────────────────────────────────┐
-│              AR.IO Bundler Services (PM2)                    │
-│  Upload Service (3001)  ◄──┐                                │
-│  Payment Service (4001) ◄──┼── Uses local gateway           │
-│  ✅ Traditional uploads   │  ✅ x402 USDC payments          │
-└─────────────────────────────────────────────────────────────┘
-                     │
-┌────────────────────▼────────────────────────────────────────┐
-│         Local Infrastructure (Docker)                        │
-│  PostgreSQL (5432) • Redis (6379/6381) • MinIO (9000-9001)  │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                 AR.IO Gateway (Optional)                         │
+│ Port 3000: Envoy | Port 4000: Core | Port 5050: Observer        │
+│ ✅ Provides /price endpoint for pricing                         │
+│ ✅ Reads uploaded data from MinIO (instant access)              │
+│ ✅ Handles bundle transactions locally                          │
+└────────┬─────────────────────────────────────────────┬──────────┘
+         │ Vertical Integration                        │
+         │ (Pricing, Optical Posting)                  │ S3/MinIO
+         │                                             │ (Data Access)
+┌────────▼─────────────────────────────────────────────▼──────────┐
+│              AR.IO Bundler Services (PM2)                        │
+│  Upload Service (3001)  ◄──┐                                    │
+│  Payment Service (4001) ◄──┼── Uses local gateway               │
+│  ✅ Traditional uploads   │  ✅ x402 USDC payments              │
+│  ✅ Stores data in MinIO  │                                     │
+└─────────────────────┬───────────────────────────────────────────┘
+                      │
+┌─────────────────────▼───────────────────────────────────────────┐
+│         Local Infrastructure (Docker)                            │
+│  PostgreSQL (5432) • Redis (6379/6381) • MinIO (9000-9001)      │
+│  ✅ MinIO serves data to gateway via virtual-hosted S3          │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## For Administrators: Quick Setup Guide
@@ -401,6 +406,134 @@ AR_IO_ADMIN_KEY=<your-ar-io-admin-key>
 OPTIONAL_OPTICAL_BRIDGE_URLS=http://other-gateway:4000/ar-io/admin/queue-data-item
 ```
 
+### MinIO Integration for Instant Data Access
+
+The bundler stores uploaded data items in MinIO (S3-compatible storage). To enable instant access to uploaded data **before bundling completes**, configure your AR.IO Gateway to read from MinIO.
+
+**Benefits:**
+- ✅ **Instant Access**: Data items available immediately after upload (no waiting for bundling)
+- ✅ **Optimistic Caching**: Gateway serves data from MinIO while bundle posts to Arweave
+- ✅ **Reduced Latency**: Fast local/LAN access vs waiting for Arweave confirmation
+- ✅ **Better UX**: Users can access their uploads instantly
+
+#### Scenario 1: Gateway and Bundler on Same Server
+
+When the AR.IO Gateway runs on the same server as the bundler, Docker networking provides automatic DNS resolution.
+
+**1. MinIO Configuration** (already configured in `docker-compose.yml`):
+
+```yaml
+services:
+  minio:
+    environment:
+      MINIO_DOMAIN: ar-io-bundler-minio  # Enables virtual-hosted-style S3
+    networks:
+      default:
+      ar-io-network:
+        aliases:
+          - ar-io-bundler-minio
+          - raw-data-items.ar-io-bundler-minio
+          - backup-data-items.ar-io-bundler-minio
+```
+
+**2. Gateway Configuration** (add to AR.IO Gateway `.env`):
+
+```bash
+# S3/MinIO Configuration
+AWS_S3_CONTIGUOUS_DATA_BUCKET=raw-data-items
+AWS_S3_CONTIGUOUS_DATA_PREFIX=raw-data-item
+AWS_ENDPOINT=http://ar-io-bundler-minio:9000
+AWS_ACCESS_KEY_ID=minioadmin
+AWS_SECRET_ACCESS_KEY=minioadmin123
+AWS_REGION=us-east-1
+
+# Prioritize S3 for data retrieval
+ON_DEMAND_RETRIEVAL_ORDER=s3,trusted-gateways,ar-io-network,chunks-offset-aware,tx-data
+```
+
+**3. Connect Gateway to Bundler Network**:
+
+```bash
+# Find your gateway core container name
+docker ps | grep ar-io
+
+# Connect gateway to bundler network
+docker network connect ar-io-bundler_default <gateway-core-container-name>
+
+# Restart gateway to apply changes
+cd /path/to/ar-io-node
+docker compose restart core
+```
+
+#### Scenario 2: Gateway and Bundler on Different Servers (Same LAN)
+
+When the AR.IO Gateway runs on a different server but same local network, use LAN IP addressing.
+
+**1. Find Bundler Server LAN IP**:
+
+```bash
+# On bundler server
+hostname -I | awk '{print $1}'
+# Example output: 192.168.2.253
+```
+
+**2. Configure DNS on Gateway Server**:
+
+Add these entries to `/etc/hosts` on the **gateway server**:
+
+```bash
+# MinIO on bundler server (replace with your actual IP)
+192.168.2.253 ar-io-bundler-minio
+192.168.2.253 raw-data-items.ar-io-bundler-minio
+192.168.2.253 backup-data-items.ar-io-bundler-minio
+```
+
+**3. Gateway Configuration** (on gateway server `.env`):
+
+```bash
+# S3/MinIO Configuration (use LAN IP)
+AWS_S3_CONTIGUOUS_DATA_BUCKET=raw-data-items
+AWS_S3_CONTIGUOUS_DATA_PREFIX=raw-data-item
+AWS_ENDPOINT=http://192.168.2.253:9000  # Use your bundler server LAN IP
+AWS_ACCESS_KEY_ID=minioadmin
+AWS_SECRET_ACCESS_KEY=minioadmin123
+AWS_REGION=us-east-1
+
+# Prioritize S3 for data retrieval
+ON_DEMAND_RETRIEVAL_ORDER=s3,trusted-gateways,ar-io-network,chunks-offset-aware,tx-data
+```
+
+**4. Restart Gateway**:
+
+```bash
+cd /path/to/ar-io-node
+docker compose restart core
+```
+
+**5. Test DNS Resolution**:
+
+```bash
+# On gateway server, verify DNS resolves
+ping -c 1 raw-data-items.ar-io-bundler-minio
+# Should resolve to bundler server IP (e.g., 192.168.2.253)
+```
+
+#### Technical Details
+
+**Why Both MINIO_DOMAIN and Network Aliases?**
+- `MINIO_DOMAIN`: Tells MinIO to respond to virtual-hosted-style bucket requests
+- Network Aliases: Tells Docker DNS how to resolve bucket subdomain names
+- Both are required for the AWS SDK's virtual-hosted-style S3 addressing
+
+**Virtual-Hosted-Style vs Path-Style**:
+- Virtual-hosted: `http://bucket.endpoint/key` (required by aws-lite)
+- Path-style: `http://endpoint/bucket/key` (legacy, not supported by aws-lite)
+
+**Security Note**:
+- MinIO port 9000 must be accessible from gateway server
+- Default credentials are `minioadmin:minioadmin123` (change in production!)
+- Consider using firewall rules to restrict access to trusted IPs
+
 ### Verify Local Gateway Integration
 
 ```bash
@@ -414,6 +547,43 @@ curl "http://localhost:4001/v1/price/bytes/1000000"
 pm2 logs payment-service --lines 5
 # Should show: "Fetched AR price from CoinGecko" (for x402 only)
 # Standard pricing comes directly from local gateway
+```
+
+### Verify MinIO Integration
+
+After uploading a data item, verify it's instantly accessible via your gateway:
+
+```bash
+# 1. Upload a test file
+echo "Hello from AR.IO Bundler" > /tmp/test.txt
+curl -X POST http://localhost:3001/v1/tx/ario \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary @/tmp/test.txt
+
+# Response includes data_item_id, e.g.: {"id":"ABC123..."}
+
+# 2. Query via gateway GraphQL (verify indexing)
+curl "http://localhost:4000/graphql" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"{ transactions(ids:[\"ABC123...\"]) { edges { node { id } } } }"}'
+
+# 3. Access data item instantly (before bundling!)
+curl http://localhost:4000/ABC123...
+# Should return: "Hello from AR.IO Bundler"
+
+# 4. Check gateway logs for S3 access
+docker logs <gateway-core-container> --tail 50 | grep -i s3
+# Should show successful S3/MinIO data retrieval
+
+# 5. Verify data in MinIO
+docker exec ar-io-bundler-minio mc ls minio/raw-data-items/raw-data-item/ABC123...
+```
+
+**Expected Flow:**
+1. Data uploaded to bundler → stored in MinIO
+2. Gateway indexes data item in GraphQL
+3. Gateway retrieves data from MinIO instantly (no waiting for bundle)
+4. Later: Bundler creates bundle → posts to Arweave → permanent storage
 ```
 
 ## Services
