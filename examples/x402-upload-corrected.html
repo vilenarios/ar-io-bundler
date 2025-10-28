@@ -168,15 +168,24 @@
         </ol>
       </div>
       <label>
-        <input type="radio" name="signingMethod" value="privateKey" checked> Use exported private key (testing only)
+        <input type="radio" name="signingMethod" value="metamask" checked> Use MetaMask (recommended)
       </label><br>
       <label>
-        <input type="radio" name="signingMethod" value="metamask"> Use MetaMask adapter (experimental)
+        <input type="radio" name="signingMethod" value="privateKey"> Use exported private key (testing only - NOT SECURE)
       </label>
-      <div id="privateKeyInput" style="margin-top: 10px;">
+      <div id="privateKeyInput" style="margin-top: 10px; display: none;">
         <input type="password" id="privateKey" placeholder="0x..." style="width: 100%; padding: 5px;">
-        <small>Export from MetaMask: Settings → Security & Privacy → Show Private Key</small>
+        <small style="color: #d32f2f;">⚠️ WARNING: Never share your private key! For local testing only.</small>
       </div>
+      <script>
+        // Toggle private key input visibility
+        document.querySelectorAll('input[name="signingMethod"]').forEach(radio => {
+          radio.addEventListener('change', (e) => {
+            document.getElementById('privateKeyInput').style.display =
+              e.target.value === 'privateKey' ? 'block' : 'none';
+          });
+        });
+      </script>
     </div>
 
     <div class="step">
