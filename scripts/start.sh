@@ -28,9 +28,18 @@ if ! docker ps | grep -q ar-io-bundler-postgres; then
   echo -e "${YELLOW}⚠️  Infrastructure not running${NC}"
   echo "   Starting Docker containers..."
   cd "$PROJECT_ROOT"
-  docker compose up -d
+  docker compose up -d postgres redis-cache redis-queues minio
   echo "   Waiting for services to be ready..."
   sleep 5
+
+  # Initialize MinIO buckets (one-time setup)
+  echo "   Initializing MinIO buckets..."
+  docker compose up minio-init
+
+  # Run database migrations
+  echo "   Running database migrations..."
+  docker compose up payment-migrator upload-migrator
+
   echo -e "${GREEN}✓${NC} Infrastructure started"
 else
   echo -e "${GREEN}✓${NC} Infrastructure running"

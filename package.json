@@ -24,7 +24,7 @@
     "db:migrate": "./scripts/migrate-all.sh",
     "db:migrate:payment": "yarn workspace @ar-io-bundler/payment-service db:migrate:latest",
     "db:migrate:upload": "yarn workspace @ar-io-bundler/upload-service db:migrate:latest",
-    "infra:up": "docker compose up -d",
+    "infra:up": "docker compose up -d postgres redis-cache redis-queues minio && docker compose up minio-init",
     "infra:down": "docker compose down",
     "infra:restart": "docker compose restart",
     "infra:logs": "docker compose logs -f",

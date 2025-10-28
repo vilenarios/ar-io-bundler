@@ -32,9 +32,14 @@ echo ""
 if [ "$RESTART_DOCKER" = true ]; then
   echo "🐳 Restarting Docker infrastructure..."
   cd "$PROJECT_ROOT"
-  docker compose restart
+  docker compose restart postgres redis-cache redis-queues minio
   echo "   Waiting for services to be ready..."
   sleep 5
+
+  # Ensure MinIO buckets exist (safe to run multiple times)
+  echo "   Ensuring MinIO buckets are initialized..."
+  docker compose up minio-init
+
   echo -e "${GREEN}✓${NC} Docker infrastructure restarted"
   echo ""
 fi

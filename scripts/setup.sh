@@ -100,7 +100,7 @@ echo ""
 
 # Start infrastructure
 echo "🐳 Starting infrastructure (PostgreSQL, Redis, MinIO)..."
-yarn infra:up
+docker compose up -d postgres redis-cache redis-queues minio
 
 if [ $? -ne 0 ]; then
   echo -e "${RED}❌ Failed to start infrastructure${NC}"
@@ -113,6 +113,18 @@ echo ""
 # Wait for services to be ready
 echo "⏳ Waiting for services to be ready..."
 sleep 10
+
+# Initialize MinIO buckets
+echo "🪣 Initializing MinIO buckets..."
+docker compose up minio-init
+
+if [ $? -ne 0 ]; then
+  echo -e "${YELLOW}⚠️  MinIO bucket initialization encountered issues${NC}"
+  echo "   You may need to run: docker compose up minio-init"
+else
+  echo -e "${GREEN}✅ MinIO buckets initialized${NC}"
+fi
+echo ""
 
 # Run migrations
 echo "🗄️  Running database migrations..."
