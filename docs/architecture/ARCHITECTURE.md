@@ -25,12 +25,15 @@
 
 ## System Overview
 
-The AR.IO Bundler is a complete ANS-104 data bundling platform for Arweave with AR.IO Gateway integration. It provides a comprehensive solution for accepting, bundling, and posting data items to the Arweave network while managing payments via cryptocurrency and credit card transactions.
+The AR.IO Bundler is a complete ANS-104 data bundling platform for Arweave with AR.IO Gateway integration. It provides a comprehensive solution for accepting, bundling, and posting data items to the Arweave network while managing payments via instant USDC stablecoin transactions (x402 protocol), traditional cryptocurrency, and credit card payments.
 
 ### Core Functionality
 
 - **Data Upload**: Accept single and multipart data item uploads (up to 10GB per item)
-- **Payment Processing**: Handle crypto payments (Arweave, Ethereum, Solana, MATIC, KYVE, Base-ETH) and Stripe payments
+- **Payment Processing**:
+  - **x402 Protocol (Primary)**: Instant USDC payments via Coinbase's HTTP 402 standard (EIP-3009, EIP-712)
+  - **Cryptocurrency**: Traditional on-chain payments (Arweave, Ethereum, Solana, MATIC, KYVE, Base-ETH)
+  - **Stripe**: Credit card and fiat currency payments
 - **Bundle Management**: Automatically bundle data items using ANS-104 standard
 - **Arweave Posting**: Post bundles to Arweave network with verification
 - **AR.IO Integration**: Optimistic caching via optical bridging to AR.IO Gateway
@@ -245,13 +248,14 @@ pm2 monit
 #### Purpose
 
 Manages all financial operations including:
-- User balance tracking (Winston credits)
-- Cryptocurrency payment verification
-- Stripe payment processing
-- ArNS (Arweave Name System) purchases
-- Promotional codes and discounts
-- Payment receipts and audit logging
-- Delegated payment approvals
+- **x402 Protocol**: Instant USDC payments (primary method)
+- **User balance tracking**: Winston credits for pre-funded accounts
+- **Cryptocurrency payments**: Traditional on-chain payment verification
+- **Stripe payments**: Credit card and fiat processing
+- **ArNS purchases**: Arweave Name System name registrations
+- **Promotional codes**: Discounts and adjustments
+- **Payment receipts**: Audit logging and transaction history
+- **Delegated payment approvals**: Third-party payment authorization
 
 #### Architecture Components
 
@@ -274,6 +278,7 @@ Manages all financial operations including:
 **Gateway Layer** (`src/gateway/`):
 - Abstract `Gateway` class for blockchain interactions
 - Implementations:
+  - `X402Gateway`: x402 payment verification and on-chain confirmation (EVM networks)
   - `ArweaveGateway`: Arweave transaction verification
   - `EthereumGateway`: Ethereum transaction verification
   - `SolanaGateway`: Solana transaction verification
@@ -285,9 +290,17 @@ Manages all financial operations including:
 **Pricing Service** (`src/pricing/`):
 - `TurboPricingService` implementation
 - Oracles for rate conversions:
+  - `X402PricingOracle`: Winston → USDC (via AR/USD from CoinGecko)
   - `BytesToWinstonOracle`: Storage bytes → Arweave Winston
   - `TokenToFiatOracle`: Cryptocurrency → Fiat currency
 - Handles promotional codes, discounts, adjustments
+
+**X402 Service** (`src/x402/x402Service.ts`):
+- EIP-712 signature verification
+- Payment requirement validation
+- Facilitator integration (Coinbase settlement service)
+- Multi-network support (Base, Ethereum, Polygon)
+- Three payment modes: PAYG, top-up, hybrid
 
 #### Key Routes
 

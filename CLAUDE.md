@@ -311,6 +311,12 @@ Key variables (see `.env.sample`):
 - `ALLOW_LISTED_ADDRESSES` - Comma-separated addresses for free uploads
 - `PAYMENT_SERVICE_BASE_URL` - Upload service → Payment service communication (**NO protocol prefix**, e.g., `localhost:4001`)
 
+**X402 Configuration** (for USDC payments):
+- `X402_PAYMENT_ADDRESS` - Your EVM wallet address for receiving USDC payments
+- `CDP_API_KEY_ID`, `CDP_API_KEY_SECRET` - **REQUIRED for mainnet** - Get from [Coinbase Developer Platform](https://portal.cdp.coinbase.com/)
+- `X402_FACILITATOR_URL_BASE` - Coinbase facilitator URL (mainnet: `https://facilitator.base.coinbasecloud.net`)
+- For testnet development: Set `X402_BASE_TESTNET_ENABLED=true` and use public facilitator `https://x402.org/facilitator` (no CDP credentials needed)
+
 **Fee Configuration**: See `FEE_CONFIGURATION_GUIDE.md` for comprehensive fee structure setup. Default config (`multiply 0.766`) subsidizes uploads at a 23.4% loss - adjust for profitability!
 
 ### PM2 Process Management
@@ -372,9 +378,12 @@ This codebase was completely migrated from AWS to open-source infrastructure:
 - ✅ **Core implementation complete** - Database methods, routes, and service layer implemented
 - ✅ **Tests fixed** - All x402 tests now compile and pass type checking
 - ✅ **Payment requirements corrected** - Proper X402PaymentRequirements interface usage
+- ✅ **CDP Authentication** - Coinbase CDP API credentials integrated for mainnet
 - **Status**: Production ready for x402 USDC payment integration
 - Three payment modes supported: PAYG (pay-as-you-go), top-up, and hybrid
 - Implements Coinbase's x402 HTTP 402 standard with EIP-3009 USDC transfers
+- **IMPORTANT**: Mainnet requires Coinbase CDP credentials (`CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`)
+- Testnet works without CDP credentials using public facilitator
 - See `packages/payment-service/X402_IMPLEMENTATION.md` for implementation details
 - Regular payment flows (crypto, Stripe) also work correctly
 

@@ -171,59 +171,151 @@ x402 is an open payments protocol that uses the HTTP 402 "Payment Required" stat
 
 ### Required Environment Variables
 
+#### Core Configuration
 ```bash
 # Enable/disable x402 (default: true)
 X402_ENABLED=true
 
 # Payment recipient address (REQUIRED if x402 enabled)
 X402_PAYMENT_ADDRESS=0xYourWalletAddress
+```
 
-# Network-specific configuration
+#### Coinbase CDP Credentials (REQUIRED for MAINNET)
+
+**IMPORTANT**: To use x402 payments on mainnet (Base, Ethereum, Polygon), you MUST obtain Coinbase CDP API credentials.
+
+**How to get credentials**:
+1. Go to [Coinbase Developer Platform Portal](https://portal.cdp.coinbase.com/)
+2. Sign up for a CDP account (if you don't have one)
+3. Create an API Key
+4. Copy your `API Key ID` and `API Key Secret`
+
+```bash
+# REQUIRED for mainnet x402 settlement
+CDP_API_KEY_ID=your-cdp-api-key-id
+CDP_API_KEY_SECRET=your-cdp-api-key-secret
+```
+
+**Testnet Exception**: For testnet development (Base Sepolia), you can use the public facilitator at `https://x402.org/facilitator` without CDP credentials.
+
+#### Network-Specific Configuration
+
+**Base Mainnet (Primary - Recommended)**
+```bash
+X402_BASE_ENABLED=true
 BASE_MAINNET_RPC_URL=https://mainnet.base.org
-X402_BASE_ENABLED=true  # Default: true
 X402_BASE_MIN_CONFIRMATIONS=1
+X402_FACILITATOR_URL_BASE=https://facilitator.base.coinbasecloud.net
+```
 
+**Ethereum Mainnet (Optional)**
+```bash
+X402_ETH_ENABLED=false  # Set to true to enable
 ETHEREUM_MAINNET_RPC_URL=https://cloudflare-eth.com/
-X402_ETH_ENABLED=false  # Default: false (enable Base first)
 X402_ETH_MIN_CONFIRMATIONS=3
+X402_FACILITATOR_URL_ETH=https://facilitator.ethereum.coinbasecloud.net
+```
 
+**Polygon Mainnet (Optional)**
+```bash
+X402_POLYGON_ENABLED=false  # Set to true to enable
 POLYGON_MAINNET_RPC_URL=https://polygon-rpc.com/
-X402_POLYGON_ENABLED=false  # Default: false
 X402_POLYGON_MIN_CONFIRMATIONS=10
+X402_FACILITATOR_URL_POLYGON=https://facilitator.polygon.coinbasecloud.net
+```
 
-# Facilitator URLs (optional, for settlement)
-X402_FACILITATOR_URL_BASE=https://facilitator.base.org
-X402_FACILITATOR_URL_ETH=https://facilitator.ethereum.org
+**Base Sepolia Testnet (Development)**
+```bash
+X402_BASE_TESTNET_ENABLED=true
+BASE_SEPOLIA_RPC_URL=https://sepolia.base.org
+X402_FACILITATOR_URL_BASE_TESTNET=https://x402.org/facilitator
+# No CDP credentials needed for testnet
+```
 
-# Payment configuration
+#### Payment Configuration
+```bash
 X402_DEFAULT_MODE=hybrid  # payg | topup | hybrid
 X402_PAYMENT_TIMEOUT_MS=300000  # 5 minutes
 X402_PRICING_BUFFER_PERCENT=15  # 15% buffer for volatility
 X402_FRAUD_TOLERANCE_PERCENT=5  # 5% tolerance for size mismatch
+```
 
-# CoinGecko (for AR/USD price)
+#### Pricing Configuration
+```bash
+# CoinGecko API for AR/USD price conversion
 COINGECKO_API_KEY=optional  # Uses free tier if not set
 ```
 
 ### Deployment Modes
 
+**Development/Testnet (No CDP required)**
+```bash
+NODE_ENV=development
+X402_BASE_TESTNET_ENABLED=true
+X402_FACILITATOR_URL_BASE_TESTNET=https://x402.org/facilitator
+X402_PAYMENT_ADDRESS=0xYourTestAddress
+# No CDP_API_KEY_ID or CDP_API_KEY_SECRET needed
+```
+
+**Production/Mainnet (CDP required)**
+```bash
+NODE_ENV=production
+X402_ENABLED=true
+X402_PAYMENT_ADDRESS=0xYourMainnetAddress
+
+# REQUIRED for mainnet
+CDP_API_KEY_ID=your-cdp-key-id
+CDP_API_KEY_SECRET=your-cdp-key-secret
+
+# Mainnet networks
+X402_BASE_ENABLED=true
+X402_FACILITATOR_URL_BASE=https://facilitator.base.coinbasecloud.net
+```
+
 **Minimal (x402-only)**
 ```bash
 X402_ENABLED=true
+CDP_API_KEY_ID=your-key-id
+CDP_API_KEY_SECRET=your-key-secret
 STRIPE_ENABLED=false
 CRYPTO_MONITORING_ENABLED=false
 ARNS_ENABLED=false
 GIFTING_ENABLED=false
 ```
 
-**Full-featured**
+**Full-featured (All payment methods)**
 ```bash
 # All payment methods enabled
 X402_ENABLED=true
+CDP_API_KEY_ID=your-key-id
+CDP_API_KEY_SECRET=your-key-secret
 STRIPE_ENABLED=true
 CRYPTO_MONITORING_ENABLED=true
-# ... etc
+ARNS_ENABLED=true
+GIFTING_ENABLED=true
 ```
+
+### CDP Authentication Details
+
+When making requests to Coinbase's x402 facilitator services for mainnet networks, the service includes CDP API credentials in request headers:
+
+```typescript
+headers: {
+  "Content-Type": "application/json",
+  "X-CDP-API-KEY-ID": process.env.CDP_API_KEY_ID,
+  "X-CDP-API-KEY-SECRET": process.env.CDP_API_KEY_SECRET
+}
+```
+
+**Validation at Startup**:
+- Service checks if mainnet networks are enabled with facilitator URLs
+- Warns if CDP credentials are missing
+- Allows startup but logs warning that mainnet settlement will fail
+
+**When CDP Auth is NOT Required**:
+- Testnet networks (Base Sepolia, etc.)
+- Public facilitator at `https://x402.org/facilitator`
+- Local signature verification (always performed client-side)
 
 ## Security Considerations
 
