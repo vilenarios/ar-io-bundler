@@ -1,7 +1,7 @@
 # AR.IO Bundler Architecture
 
 **Version:** 1.0.0
-**Last Updated:** 2025-10-24
+**Last Updated:** 2025-10-28
 
 ## Table of Contents
 
@@ -304,27 +304,80 @@ Manages all financial operations including:
 
 #### Key Routes
 
+**x402 Payment Routes (Primary)**:
+
 | Route | Method | Purpose |
 |-------|--------|---------|
-| `/v1/balance` | GET | Get user balance |
-| `/v1/balance/:token` | POST | Add pending payment transaction |
+| `/v1/x402/price/:signatureType/:address` | GET | Get x402 payment requirements (402 response with USDC amount) |
+| `/v1/x402/payment/:signatureType/:address` | POST | Verify and settle x402 payment (EIP-712 signature validation) |
+| `/v1/x402/finalize` | POST | Finalize x402 payment after upload validation |
+
+**Balance & Traditional Payment Routes**:
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/v1/balance` | GET | Get user balance (Winston credits) |
+| `/v1/balance/:token` | POST | Add pending cryptocurrency transaction |
 | `/v1/reserve-balance` | POST | Reserve balance for operation |
 | `/v1/refund-balance` | POST | Refund reserved balance |
 | `/v1/top-up/:currency` | POST | Create Stripe checkout session |
 | `/v1/stripe-webhook` | POST | Handle Stripe webhook events |
 | `/v1/redeem` | POST | Redeem promotional code |
 | `/v1/price/:currency/:amount` | GET | Calculate price for bytes |
+
+**ArNS Routes**:
+
+| Route | Method | Purpose |
+|-------|--------|---------|
 | `/v1/arns/price/:intent/:name` | GET | Get ArNS name price quote |
 | `/v1/arns/purchase/:intent/:name` | POST | Initiate ArNS purchase |
 | `/v1/arns/purchase/:nonce` | GET | Check ArNS purchase status |
+
+**Delegated Payment Routes**:
+
+| Route | Method | Purpose |
+|-------|--------|---------|
 | `/v1/account/approvals` | POST | Create payment approval |
 | `/v1/account/approvals` | GET | List approvals |
 | `/v1/account/approvals/:approvalId` | DELETE | Revoke approval |
+
+**Utility Routes**:
+
+| Route | Method | Purpose |
+|-------|--------|---------|
 | `/v1/rates` | GET | Get conversion rates |
 | `/v1/currencies` | GET | List supported currencies |
 | `/v1/countries` | GET | List supported countries |
 
 #### Database Schema (Payment Service)
+
+**x402 Payment Tables** (Primary Payment Method):
+
+- **`x402_payment_transaction`**: USDC payment records
+  - `id` (PK): UUID
+  - `user_address`: Recipient address
+  - `user_address_type`: Address type (e.g., 'ethereum')
+  - `tx_hash`: On-chain transaction hash (unique)
+  - `network`: EVM network (base-mainnet, ethereum-mainnet, etc.)
+  - `token_address`: USDC contract address
+  - `usdc_amount`: USDC atomic units (6 decimals)
+  - `winc_amount`: Winston equivalent
+  - `mode`: Payment mode ('payg', 'topup', 'hybrid')
+  - `data_item_id`: Associated upload (nullable)
+  - `declared_byte_count`: Size declared at payment (nullable)
+  - `actual_byte_count`: Actual upload size (nullable)
+  - `status`: 'pending_validation', 'confirmed', 'refunded', 'fraud_penalty'
+  - `paid_at`: Payment timestamp
+  - `finalized_at`: Finalization timestamp (nullable)
+  - `refund_winc`: Refund amount if applicable (nullable)
+  - `payer_address`: EIP-712 signer address
+
+- **`x402_payment_reservation`**: Reserved credits for uploads
+  - `data_item_id` (PK): Data item ID
+  - `x402_payment_id` (FK): Associated payment
+  - `winc_reserved`: Reserved Winston amount
+  - `created_at`: Reservation timestamp
+  - `expires_at`: Expiration timestamp (1 hour)
 
 **Core Tables**:
 
@@ -805,7 +858,135 @@ BACKUP_DATA_ITEM_BUCKET=backup-data-items
    └─ (Joins main pipeline at step 3)
 ```
 
-### Crypto Payment Flow
+### x402 Payment Flow (Primary Payment Method)
+
+The x402 protocol is the **primary payment method**, implementing Coinbase's HTTP 402 standard for instant USDC stablecoin payments using EIP-3009 (gasless transfers) and EIP-712 (typed signatures).
+
+**Three-Phase Flow:**
+
+#### Phase 1: Price Quote
+
+```
+1. Client → GET /v1/x402/price/:signatureType/:address?bytes=N
+   ├─ Calculate Winston cost from byte count
+   ├─ Add 15% pricing buffer for volatility
+   ├─ Convert Winston → USD → USDC (via CoinGecko AR/USD price)
+   ├─ Generate PaymentRequirements for all enabled networks
+   └─ Return 200 OK with payment requirements array
+
+Response (JSON for API, HTML paywall for browsers):
+{
+  "x402Version": 1,
+  "accepts": [{
+    "scheme": "exact",
+    "network": "base-mainnet",
+    "maxAmountRequired": "1500000",  // USDC atomic units (6 decimals)
+    "resource": "/v1/tx",
+    "payTo": "0x...",  // X402_PAYMENT_ADDRESS
+    "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",  // USDC contract
+    "maxTimeoutSeconds": 300
+  }]
+}
+```
+
+#### Phase 2: Verify and Settle
+
+```
+2. Client generates EIP-712 signature
+   ├─ Domain: USDC contract + chain ID
+   ├─ Message: { from, to, value, validAfter, validBefore, nonce }
+   └─ Sign with wallet (MetaMask, etc.)
+
+3. Client → POST /v1/x402/payment/:signatureType/:address
+   BODY: {
+     paymentHeader: "base64(JSON+signature)",
+     dataItemId: "optional-data-item-id",
+     byteCount: 1048576,
+     mode: "hybrid"  // or "payg" or "topup"
+   }
+
+   Server processes payment:
+   ├─ Decode base64 payment header
+   ├─ Verify EIP-712 signature (recover signer)
+   ├─ Validate payment requirements (amount, recipient, timeout)
+   ├─ Call facilitator: POST ${facilitatorUrl}/settle
+   │  ├─ Facilitator executes receiveWithAuthorization() on USDC contract
+   │  └─ Returns transaction hash
+   ├─ Convert USDC → Winston using X402PricingOracle
+   ├─ Create x402_payment_transaction record (status: pending_validation)
+   ├─ Handle payment mode:
+   │  ├─ PAYG: Reserve exact Winston for data_item_id
+   │  ├─ Top-up: Credit entire amount to user balance
+   │  └─ Hybrid (DEFAULT): Reserve for upload + credit excess to balance
+   └─ Return payment confirmation
+
+Response:
+{
+  "paymentId": "uuid",
+  "txHash": "0x...",
+  "network": "base-mainnet",
+  "mode": "hybrid",
+  "wincReserved": "5000000",  // For the upload
+  "wincCredited": "1000000"   // Excess added to balance
+}
+```
+
+#### Phase 3: Finalize (Post-Upload)
+
+```
+4. Upload Service → POST /v1/x402/finalize
+   BODY: {
+     dataItemId: "data-item-id",
+     actualByteCount: 1048576
+   }
+
+   Server finalizes payment:
+   ├─ Retrieve payment by data_item_id
+   ├─ Compare actual_byte_count vs declared_byte_count
+   ├─ Fraud detection (5% tolerance):
+   │  ├─ actual > declared + 5%: status = "fraud_penalty" (keep payment)
+   │  ├─ actual < declared - 5%: status = "refunded" (proportional refund)
+   │  └─ within tolerance: status = "confirmed"
+   ├─ Update payment status and finalized_at timestamp
+   ├─ Credit refund to balance if applicable
+   └─ Delete x402_payment_reservation
+
+Response:
+{
+  "success": true,
+  "status": "confirmed",
+  "actualByteCount": 1048576,
+  "refundWinc": "0"
+}
+```
+
+**Payment Modes:**
+
+| Mode | Behavior | Use Case |
+|------|----------|----------|
+| **payg** | Reserve exact amount for upload only | One-time payment per upload |
+| **topup** | Credit entire payment to balance | Pre-fund account for multiple uploads |
+| **hybrid** (default) | Reserve for upload, credit excess | Best UX: pay once, use excess later |
+
+**Supported Networks:**
+
+| Network | Chain ID | Status | Min Confirmations |
+|---------|----------|--------|-------------------|
+| Base Mainnet | 8453 | ✅ Enabled (default) | 1 |
+| Ethereum Mainnet | 1 | ❌ Disabled | 3 |
+| Polygon Mainnet | 137 | ❌ Disabled | 10 |
+| Base Sepolia | 84532 | ✅ Testnet | 1 |
+
+**Key Features:**
+- **No pre-funding required**: Pay for upload in ~2 seconds
+- **Instant settlement**: EIP-3009 gasless USDC transfers via Coinbase facilitator
+- **Multi-network**: Support multiple EVM chains simultaneously
+- **Three payment modes**: Flexible UX (PAYG, top-up, hybrid)
+- **Fraud protection**: Size validation with 5% tolerance + proportional refunds
+- **Browser support**: Interactive paywall with MetaMask integration
+- **EIP-712 security**: Cryptographic signature verification with replay protection
+
+### Crypto Payment Flow (Traditional)
 
 ```
 1. Client → POST /v1/balance/:token
@@ -1459,6 +1640,78 @@ MATIC_RPC_ENDPOINT=https://polygon-rpc.com
 KYVE_RPC_ENDPOINT=https://rpc.kyve.network
 BASE_ETH_RPC_ENDPOINT=https://mainnet.base.org
 ```
+
+#### x402 Payment Protocol (Primary Payment Method)
+
+**Core Settings:**
+```bash
+# Enable x402 protocol (default: true)
+X402_ENABLED=true
+
+# Payment recipient address (REQUIRED)
+X402_PAYMENT_ADDRESS=0xYourWalletAddress
+
+# Coinbase CDP credentials (REQUIRED for mainnet)
+CDP_API_KEY_ID=your-key-id
+CDP_API_KEY_SECRET=your-key-secret
+
+# Browser paywall client key (optional - for Coinbase Onramp widget)
+X_402_CDP_CLIENT_KEY=your-client-key
+```
+
+**Payment Behavior:**
+```bash
+# Default payment mode: payg | topup | hybrid
+X402_DEFAULT_MODE=hybrid
+
+# Payment authorization timeout (5 minutes default)
+X402_PAYMENT_TIMEOUT_MS=300000
+
+# Pricing buffer for volatility (15% default)
+X402_PRICING_BUFFER_PERCENT=15
+
+# Fraud detection tolerance (5% default)
+X402_FRAUD_TOLERANCE_PERCENT=5
+```
+
+**Network Configuration:**
+```bash
+# Base Mainnet (primary network, enabled by default)
+X402_BASE_ENABLED=true
+BASE_MAINNET_RPC_URL=https://mainnet.base.org
+X402_BASE_MIN_CONFIRMATIONS=1
+X402_FACILITATOR_URL_BASE=https://facilitator.base.coinbasecloud.net
+
+# Ethereum Mainnet (disabled by default)
+X402_ETH_ENABLED=false
+ETHEREUM_MAINNET_RPC_URL=https://cloudflare-eth.com/
+X402_ETH_MIN_CONFIRMATIONS=3
+X402_FACILITATOR_URL_ETH=https://facilitator.ethereum.coinbasecloud.net
+
+# Polygon Mainnet (disabled by default)
+X402_POLYGON_ENABLED=false
+POLYGON_MAINNET_RPC_URL=https://polygon-rpc.com
+X402_POLYGON_MIN_CONFIRMATIONS=10
+X402_FACILITATOR_URL_POLYGON=https://facilitator.polygon.coinbasecloud.net
+
+# Base Sepolia Testnet (for development)
+X402_BASE_TESTNET_ENABLED=true
+BASE_SEPOLIA_RPC_URL=https://sepolia.base.org
+X402_FACILITATOR_URL_BASE_TESTNET=https://x402.org/facilitator
+```
+
+**External Dependencies:**
+```bash
+# CoinGecko API for AR/USD pricing (optional)
+COINGECKO_API_KEY=your-api-key
+```
+
+**Important Notes:**
+- CDP credentials are **required** for mainnet networks (Base, Ethereum, Polygon)
+- Testnet networks (Base Sepolia) use public facilitator, no CDP credentials needed
+- Get CDP credentials from: https://portal.cdp.coinbase.com/
+- Browser paywall requires `X_402_CDP_CLIENT_KEY` for Coinbase Onramp integration
+- Default network: Base Mainnet (fastest, lowest fees)
 
 #### Stripe
 ```bash
