@@ -54,6 +54,23 @@ module.exports = {
       autorestart: true,
     },
     {
+      name: 'payment-workers',
+      cwd: path.join(__dirname, 'packages/payment-service'),
+      script: './lib/workers/index.js',
+      instances: 1,
+      exec_mode: 'fork',
+      env: {
+        ...paymentServiceEnv,
+        NODE_ENV: 'production',
+      },
+      error_file: './logs/payment-workers-error.log',
+      out_file: './logs/payment-workers-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss',
+      merge_logs: true,
+      autorestart: true,
+      kill_timeout: 30000,
+    },
+    {
       name: 'upload-workers',
       cwd: path.join(__dirname, 'packages/upload-service'),
       script: './lib/workers/allWorkers.js',

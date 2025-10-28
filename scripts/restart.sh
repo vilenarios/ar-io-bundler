@@ -46,7 +46,7 @@ fi
 
 # Restart PM2 services
 echo "🔄 Restarting PM2 services..."
-if pm2 list | grep -q "payment-service\|upload-api\|upload-workers\|bull-board"; then
+if pm2 list | grep -q "payment-service\|payment-workers\|upload-api\|upload-workers\|bull-board"; then
   pm2 restart all
   echo -e "${GREEN}✓${NC} PM2 services restarted"
 else

@@ -98,9 +98,9 @@ echo -e "${GREEN}✓${NC} Configuration files found"
 # Stop existing services if running
 echo ""
 echo "🔄 Checking for existing PM2 processes..."
-if pm2 list | grep -q "payment-service\|upload-api\|upload-workers\|bull-board"; then
+if pm2 list | grep -q "payment-service\|payment-workers\|upload-api\|upload-workers\|bull-board"; then
   echo "   Stopping existing processes..."
-  pm2 delete payment-service upload-api upload-workers bull-board 2>/dev/null || true
+  pm2 delete payment-service payment-workers upload-api upload-workers bull-board 2>/dev/null || true
   echo -e "${GREEN}✓${NC} Existing processes stopped"
 else
   echo -e "${GREEN}✓${NC} No existing processes"
@@ -144,8 +144,9 @@ echo ""
 echo "Useful Commands:"
 echo "  pm2 logs                  - View all logs"
 echo "  pm2 logs payment-service  - View payment service logs"
+echo "  pm2 logs payment-workers  - View payment workers (pending tx, admin credits)"
 echo "  pm2 logs upload-api       - View upload service logs"
-echo "  pm2 logs upload-workers   - View worker logs (bundling pipeline)"
+echo "  pm2 logs upload-workers   - View upload workers (bundling pipeline)"
 echo "  pm2 logs bull-board       - View Bull Board logs (queue monitoring)"
 echo "  pm2 monit                 - Monitor processes"
 echo "  pm2 restart all           - Restart all services"

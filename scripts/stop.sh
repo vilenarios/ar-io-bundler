@@ -30,7 +30,7 @@ echo ""
 
 # Stop PM2 services
 echo "🛑 Stopping PM2 services..."
-if pm2 list | grep -q "payment-service\|upload-api\|upload-workers\|bull-board"; then
+if pm2 list | grep -q "payment-service\|payment-workers\|upload-api\|upload-workers\|bull-board"; then
   pm2 stop all 2>/dev/null || true
   pm2 delete all 2>/dev/null || true
   echo -e "${GREEN}✓${NC} PM2 services stopped and removed"
