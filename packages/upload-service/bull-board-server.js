@@ -1,19 +1,17 @@
 /**
- * Copyright (C) 2022-2024 Permanent Data Solutions, Inc. All Rights Reserved.
- *
  * Bull Board Monitoring Dashboard
  *
- * Run with: yarn ts-node bull-board-server.ts
- * Access at: http://localhost:3001/admin/queues
+ * Run with: node bull-board-server.js
+ * Access at: http://localhost:3002/admin/queues
  */
-import { createBullBoard } from "@bull-board/api";
-import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
-import { KoaAdapter } from "@bull-board/koa";
-import Koa from "koa";
-import mount from "koa-mount";
+const { createBullBoard } = require("@bull-board/api");
+const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
+const { KoaAdapter } = require("@bull-board/koa");
+const Koa = require("koa");
+const mount = require("koa-mount");
 
-import { jobLabels } from "./src/constants";
-import { getQueue } from "./src/arch/queues/config";
+const { jobLabels } = require("./lib/constants");
+const { getQueue } = require("./lib/arch/queues/config");
 
 const app = new Koa();
 
@@ -39,9 +37,9 @@ createBullBoard({
   serverAdapter,
 });
 
-app.use(mount(serverAdapter.getRouter));
+app.use(mount(serverAdapter.registerPlugin()));
 
-const PORT = process.env.BULL_BOARD_PORT || 3002; // Changed from 3001 to avoid conflict with Upload API
+const PORT = process.env.BULL_BOARD_PORT || 3002;
 
 app.listen(PORT, () => {
   console.log(`

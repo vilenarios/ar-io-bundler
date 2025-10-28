@@ -70,5 +70,22 @@ module.exports = {
       autorestart: true,
       kill_timeout: 30000,
     },
+    {
+      name: 'bull-board',
+      cwd: __dirname,
+      script: './packages/upload-service/bull-board-server.js',
+      instances: 1,
+      exec_mode: 'fork',
+      env: {
+        ...uploadServiceEnv,
+        NODE_ENV: 'production',
+        BULL_BOARD_PORT: 3002,
+      },
+      error_file: './logs/bull-board-error.log',
+      out_file: './logs/bull-board-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss',
+      merge_logs: true,
+      autorestart: true,
+    },
   ],
 };
