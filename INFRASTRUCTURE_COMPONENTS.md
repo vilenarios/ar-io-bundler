@@ -49,17 +49,24 @@ This document lists all infrastructure components and how they're managed by our
    - Process name: `payment-service`
    - Instances: 2 (cluster mode)
    - Script: `packages/payment-service/lib/index.js`
-   
+
 2. **Upload API** (port 3001)
    - Process name: `upload-api`
    - Instances: 2 (cluster mode)
    - Script: `packages/upload-service/lib/index.js`
-   
+
 3. **Upload Workers** (background jobs)
    - Process name: `upload-workers`
    - Instances: 1 (fork mode - IMPORTANT: must be single instance)
    - Script: `packages/upload-service/lib/workers/allWorkers.js`
    - Handles 11 BullMQ job queues
+
+4. **Bull Board** (port 3002)
+   - Process name: `bull-board`
+   - Instances: 1 (fork mode)
+   - Script: `packages/upload-service/bull-board-server.js`
+   - Provides web UI for monitoring all 11 BullMQ queues
+   - Access at: http://localhost:3002/admin/queues
 
 ## Script Coverage
 
@@ -69,7 +76,7 @@ This document lists all infrastructure components and how they're managed by our
 - ✅ Runs MinIO initialization (creates buckets)
 - ✅ Runs database migrations (payment + upload)
 - ✅ Checks for builds, wallet, .env files
-- ✅ Starts all PM2 services via ecosystem.config.js
+- ✅ Starts all PM2 services via ecosystem.config.js (payment, upload-api, upload-workers, bull-board)
 
 ### ./scripts/stop.sh
 **Stops all components:**
@@ -131,6 +138,7 @@ This document lists all infrastructure components and how they're managed by our
 ### Port Conflicts
 Ensure no other services are using these ports:
 - 3001 (Upload API)
+- 3002 (Bull Board - Queue Monitoring)
 - 4001 (Payment Service)
 - 5432 (PostgreSQL)
 - 6379 (Redis Cache)
@@ -153,6 +161,9 @@ pm2 list
 # Check service health
 curl http://localhost:3001/health
 curl http://localhost:4001/health
+
+# Check Bull Board (queue monitoring)
+open http://localhost:3002/admin/queues
 
 # Check MinIO console
 open http://localhost:9001
