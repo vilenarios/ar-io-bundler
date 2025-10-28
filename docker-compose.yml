@@ -70,6 +70,13 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      default:
+      ar-io-network:
+        aliases:
+          - ar-io-bundler-minio
+          - raw-data-items.ar-io-bundler-minio
+          - backup-data-items.ar-io-bundler-minio
 
   # MinIO Initialization - Create buckets
   minio-init:
@@ -129,6 +136,11 @@ volumes:
   redis-cache-data:
   redis-queues-data:
   minio-data:
+
+networks:
+  ar-io-network:
+    external: true
+    name: ar-io-network
 
 # Notes:
 # - Payment and upload services are managed by PM2, not docker-compose
