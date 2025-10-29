@@ -43,7 +43,11 @@ This document lists all infrastructure components and how they're managed by our
    - Container: `ar-io-bundler-upload-migrator`
    - Runs upload service database migrations
 
-## PM2 Services (ecosystem.config.js)
+## PM2 Services
+
+**Configuration**: `ecosystem.config.js` (root directory)
+
+All PM2 services are managed by the root-level `ecosystem.config.js` file, which is used by `./scripts/start.sh`, `./scripts/stop.sh`, and `./scripts/restart.sh`.
 
 1. **Payment Service** (port 4001)
    - Process name: `payment-service`
@@ -55,13 +59,19 @@ This document lists all infrastructure components and how they're managed by our
    - Instances: 2 (cluster mode)
    - Script: `packages/upload-service/lib/index.js`
 
-3. **Upload Workers** (background jobs)
+3. **Payment Workers** (background jobs)
+   - Process name: `payment-workers`
+   - Instances: 1 (fork mode)
+   - Script: `packages/payment-service/lib/workers/index.js`
+   - Handles payment-related background jobs
+
+4. **Upload Workers** (background jobs)
    - Process name: `upload-workers`
    - Instances: 1 (fork mode - IMPORTANT: must be single instance)
    - Script: `packages/upload-service/lib/workers/allWorkers.js`
    - Handles 11 BullMQ job queues
 
-4. **Bull Board** (port 3002)
+5. **Bull Board** (port 3002)
    - Process name: `bull-board`
    - Instances: 1 (fork mode)
    - Script: `packages/upload-service/bull-board-server.js`
@@ -76,7 +86,7 @@ This document lists all infrastructure components and how they're managed by our
 - ✅ Runs MinIO initialization (creates buckets)
 - ✅ Runs database migrations (payment + upload)
 - ✅ Checks for builds, wallet, .env files
-- ✅ Starts all PM2 services via ecosystem.config.js (payment, upload-api, upload-workers, bull-board)
+- ✅ Starts all PM2 services via ecosystem.config.js (payment-service, payment-workers, upload-api, upload-workers, bull-board)
 
 ### ./scripts/stop.sh
 **Stops all components:**
