@@ -15,7 +15,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 import { Next } from "koa";
-import getRawBody from "raw-body";
 
 import { cryptoFundExcludedAddresses } from "../constants";
 import {
@@ -41,14 +40,13 @@ export async function addPendingPaymentTx(ctx: KoaContext, _next: Next) {
   let logger = ctx.state.logger;
 
   try {
-    const rawBody = await getRawBody(ctx.req);
-    let tx_id: string;
-    try {
-      const parsedBody = JSON.parse(rawBody.toString());
-      tx_id = parsedBody.tx_id;
-    } catch (error) {
-      logger.error("Invalid JSON in request body", { error });
-      throw new BadRequest("Invalid JSON in request body");
+    // Body is already parsed by koa-bodyparser middleware
+    const parsedBody = (ctx.request as any).body as { tx_id?: string };
+    const tx_id = parsedBody?.tx_id;
+
+    if (!parsedBody || typeof parsedBody !== "object") {
+      logger.error("Invalid request body");
+      throw new BadRequest("Invalid request body");
     }
 
     const token = ctx.params.token as string;
