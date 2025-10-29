@@ -82,6 +82,7 @@ interface Architecture {
   arweaveGateway: ArweaveGateway;
   logger: winston.Logger;
   getArweaveWallet: () => JWKInterface;
+  getRawDataItemWallet: () => JWKInterface;  // For raw data uploads (server-signed)
   tracer?: Tracer;
 }
 ```
@@ -858,6 +859,116 @@ BACKUP_DATA_ITEM_BUCKET=backup-data-items
    └─ (Joins main pipeline at step 3)
 ```
 
+### Raw Data Upload (x402 Only)
+
+The raw data upload flow is designed for AI agents and applications that want to upload data without implementing ANS-104 data item signing. The upload service creates and signs data items server-side while maintaining clear attribution of who paid versus who signed.
+
+**Key Features:**
+- **Server-signed**: Upload service signs ANS-104 data items using a dedicated wallet
+- **x402 payment required**: Only works with instant USDC payments (no balance needed)
+- **Automatic whitelisting**: Raw data item wallet is whitelisted (bypasses credit checks)
+- **Attribution tracking**: Tags identify the payer (Ethereum address) separately from signer
+- **Wallet separation**: Dedicated wallet for raw uploads (separate from bundle signing wallet)
+
+**Configuration:**
+```bash
+# Enable raw data uploads
+RAW_DATA_UPLOADS_ENABLED=true
+
+# Wallet for signing raw data items (automatically whitelisted)
+RAW_DATA_ITEM_JWK_FILE=/path/to/raw-data-wallet.json
+
+# x402 payment configuration
+X402_NETWORK=base-sepolia
+USDC_CONTRACT_ADDRESS=0x036CbD53842c5426634e7929541eC2318f3dCF7e
+```
+
+**Flow:**
+
+```
+1. Client → POST /v1/tx (raw data, no X-PAYMENT header)
+   ├─ Smart detection: Check first 2 bytes for ANS-104 signature type
+   ├─ If not ANS-104: Treat as raw data
+   ├─ Parse request (binary + headers OR JSON envelope)
+   ├─ Validate size (max 10GB)
+   └─ Return 402 Payment Required with x402 requirements
+
+2. Client → POST /v1/tx (raw data + X-PAYMENT header)
+   ├─ Parse raw data and custom tags (X-Tag-* headers)
+   ├─ Extract payer address from X-PAYMENT header (EIP-3009)
+   ├─ Create ANS-104 data item server-side:
+   │  ├─ Sign with RAW_DATA_ITEM_JWK (Arweave wallet)
+   │  └─ Add attribution tags:
+   │     ├─ Bundler: Service name
+   │     ├─ Upload-Type: "raw-data-x402"
+   │     ├─ Payer-Address: Ethereum address that paid
+   │     ├─ Upload-Timestamp: Unix timestamp
+   │     ├─ Content-Type: User-provided MIME type
+   │     └─ Custom tags from X-Tag-* headers
+   ├─ Verify x402 payment:
+   │  ├─ Validate against PAYER's Ethereum address (signatureType 3)
+   │  ├─ Settle USDC transfer via EIP-3009
+   │  └─ Hybrid mode: Excess tops up payer's balance
+   ├─ Store data item in MinIO
+   ├─ Insert into new_data_item:
+   │  ├─ ownerPublicAddress: Raw data item wallet (whitelisted)
+   │  ├─ signatureType: 1 (Arweave - data item signer)
+   │  └─ assessedWinstonPrice: From payment
+   ├─ Enqueue newDataItem
+   └─ Return 201 with:
+      ├─ id: Data item ID
+      ├─ owner: Raw data item wallet address (signer)
+      ├─ payer: Ethereum address (actual payer)
+      └─ x402Payment: Transaction details
+
+3. Worker → (Joins standard pipeline at planBundle)
+   ├─ No special handling needed
+   ├─ Uses "default" premiumFeatureType
+   └─ Bundles with other data items normally
+```
+
+**Separation of Concerns:**
+- **Payer** (Ethereum address): Provides x402 USDC payment, owns the upload economically
+- **Signer** (Arweave address): Raw data item wallet, signs the ANS-104 data item
+- Payment verified against payer's Ethereum wallet
+- Data item signed by whitelisted Arweave wallet (no balance required)
+- Attribution tracked via `Payer-Address` tag
+
+**Request Formats:**
+
+*Binary upload with headers:*
+```bash
+curl -X POST http://localhost:3001/v1/tx \
+  -H "Content-Type: application/json" \
+  -H "Content-Length: 1234" \
+  -H "X-Tag-App-Name: MyApp" \
+  -H "X-Tag-Version: 1.0" \
+  -H "X-PAYMENT: <base64-eip3009-authorization>" \
+  --data-binary @data.json
+```
+
+*JSON envelope:*
+```bash
+curl -X POST http://localhost:3001/v1/tx \
+  -H "Content-Type: application/json" \
+  -H "X-PAYMENT: <base64-eip3009-authorization>" \
+  -d '{
+    "data": "<base64-encoded-data>",
+    "contentType": "application/json",
+    "tags": [
+      {"name": "App-Name", "value": "MyApp"},
+      {"name": "Version", "value": "1.0"}
+    ]
+  }'
+```
+
+**Benefits:**
+- **Simplified integration**: No ANS-104 signing library needed
+- **Security**: Separate wallet limits exposure
+- **Accounting**: Easy to track all raw uploads (single owner address)
+- **Attribution**: Payer-Address tag tracks economic ownership
+- **Backwards compatible**: Existing ANS-104 uploads unchanged
+
 ### x402 Payment Flow (Primary Payment Method)
 
 The x402 protocol is the **primary payment method**, implementing Coinbase's HTTP 402 standard for instant USDC stablecoin payments using EIP-3009 (gasless transfers) and EIP-712 (typed signatures).
@@ -1067,12 +1178,19 @@ Response:
 **Base URL**: `http://localhost:3001`
 
 #### POST /v1/tx
-Upload a signed data item.
+Upload a signed ANS-104 data item OR raw data with x402 payment.
+
+**Two Upload Modes:**
+
+**Mode 1: Traditional ANS-104 Upload (Client-Signed)**
+
+Client creates and signs ANS-104 data item before uploading.
 
 **Headers**:
 - `Content-Type: application/octet-stream`
+- `X-PAYMENT: <base64-eip3009-authorization>` (optional, for x402 payment)
 
-**Body**: Raw binary data item (ANS-104 format)
+**Body**: Raw binary data item in ANS-104 format (starts with signature type bytes)
 
 **Response**:
 ```json
@@ -1083,6 +1201,92 @@ Upload a signed data item.
   "fastFinalityIndexes": ["arweave.net"]
 }
 ```
+
+**Mode 2: Raw Data Upload (Server-Signed, x402 Only)**
+
+Client uploads raw data without ANS-104 signing. Server creates and signs data item. Requires `RAW_DATA_UPLOADS_ENABLED=true`.
+
+**Smart Detection**: Service checks first 2 bytes - if not a valid ANS-104 signature type (1-8), treats as raw data.
+
+**Phase 1 - Price Quote (no payment)**:
+
+Request:
+```bash
+POST /v1/tx
+Content-Type: application/json
+Content-Length: 1234
+
+<raw-data>
+```
+
+Response (402 Payment Required):
+```json
+{
+  "x402Version": 1,
+  "accepts": [{
+    "scheme": "eip-3009",
+    "network": "base-sepolia",
+    "maxAmountRequired": "10000",
+    "resource": "/v1/tx",
+    "description": "Upload 1234 bytes to Arweave via AR.IO Bundler",
+    "mimeType": "application/json",
+    "payTo": "0x...",
+    "maxTimeoutSeconds": 3600,
+    "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+  }],
+  "error": "Payment required to upload data"
+}
+```
+
+**Phase 2 - Upload with Payment**:
+
+Request:
+```bash
+POST /v1/tx
+Content-Type: application/json
+Content-Length: 1234
+X-Tag-App-Name: MyApp
+X-PAYMENT: <base64-json-with-eip3009-authorization>
+
+<raw-data>
+```
+
+Response (201 Created):
+```json
+{
+  "id": "abc123...",
+  "owner": "xyz789...",  // Raw data item wallet (signer)
+  "payer": "0x...",      // Ethereum address that paid
+  "dataCaches": ["arweave.net"],
+  "fastFinalityIndexes": ["arweave.net"],
+  "receipt": { /* signed receipt */ },
+  "x402Payment": {
+    "paymentId": "uuid",
+    "transactionHash": "0x...",
+    "network": "base-sepolia",
+    "mode": "hybrid"
+  }
+}
+```
+
+**JSON Envelope Format** (alternative):
+```json
+{
+  "data": "<base64-encoded-data>",
+  "contentType": "application/json",
+  "tags": [
+    {"name": "App-Name", "value": "MyApp"}
+  ]
+}
+```
+
+**Auto-Added Tags for Raw Uploads**:
+- `Bundler`: Service name
+- `Upload-Type`: "raw-data-x402"
+- `Payer-Address`: Ethereum address from X-PAYMENT header
+- `Upload-Timestamp`: Unix timestamp
+- `Content-Type`: From request header or JSON
+- Custom tags from `X-Tag-*` headers or JSON
 
 #### POST /v1/tx/:id
 Upload an unsigned data item with signature.
@@ -1444,8 +1648,9 @@ JWT_SECRET=<openssl rand -hex 32>
 STRIPE_SECRET_KEY=sk_live_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 
-# Arweave Wallet
-TURBO_JWK_FILE=./wallet.json
+# Arweave Wallets
+TURBO_JWK_FILE=./wallet.json                    # Bundle signing wallet
+RAW_DATA_ITEM_JWK_FILE=./raw-data-wallet.json   # Raw upload signing (auto-whitelisted)
 
 # AR.IO Gateway
 AR_IO_ADMIN_KEY=<admin-key>
@@ -1618,12 +1823,19 @@ AR_IO_ADMIN_KEY=<admin-key>
 
 #### Upload Service Features
 ```bash
+# Allowlist and balance
 ALLOW_LISTED_ADDRESSES=addr1,addr2,addr3
 SKIP_BALANCE_CHECKS=false
+
+# Size limits
 MAX_DATA_ITEM_SIZE=10737418240  # 10GB
 MAX_BUNDLE_SIZE=2147483648      # 2GB
 MAX_DATA_ITEM_LIMIT=10000
 FREE_UPLOAD_LIMIT=517120        # ~505 KiB
+
+# Raw data uploads (server-signed, x402 only)
+RAW_DATA_UPLOADS_ENABLED=true
+RAW_DATA_ITEM_JWK_FILE=./raw-data-wallet.json
 ```
 
 #### PostgreSQL Configuration

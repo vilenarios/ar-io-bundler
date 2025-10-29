@@ -97,6 +97,24 @@ components:
       schema:
         type: string
         example: "eyJ4NDAyVmVyc2lvbiI6MSwic2NoZW1lIjoiZWlwLTMwMDkiLCJuZXR3b3JrIjoiYmFzZS1tYWlubmV0IiwicGF5bG9hZCI6ey4uLn19"
+
+    x-tag-custom:
+      name: X-Tag-*
+      in: header
+      required: false
+      description: |
+        Custom tags for raw data uploads (server-signed mode only). Use pattern X-Tag-Name where Name becomes the tag name.
+        Example: X-Tag-App-Name: MyApp creates tag {"name": "App-Name", "value": "MyApp"}
+
+        Auto-added tags for raw uploads:
+        - Bundler: Service name
+        - Upload-Type: "raw-data-x402"
+        - Payer-Address: Ethereum address from X-PAYMENT
+        - Upload-Timestamp: Unix timestamp
+        - Content-Type: From Content-Type header
+      schema:
+        type: string
+        example: "MyApp"
   schemas:
     DataItemStatus:
       type: object
@@ -146,8 +164,12 @@ components:
           example: "QpmY8mZmFEC8RxNsgbxSV6e36OF6quIYaPRKzvUco0o"
         owner:
           type: string
-          description: The normalized wallet address that signed data item.
+          description: The normalized wallet address that signed data item. For raw data uploads, this is the server's raw data item wallet (auto-whitelisted).
           example: "8wgRDgvYOrtSaWEIV21g0lTuWDUnTu4_iYj4hmA7PI0"
+        payer:
+          type: string
+          description: The Ethereum address that paid for this upload via x402 (only present for raw data uploads, tracked in Payer-Address tag).
+          example: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0"
         dataCaches:
           type: array
           description: The Arweave data caches the data item has been posted to.
@@ -454,25 +476,74 @@ paths:
       - $ref: "#/components/parameters/content-length"
       - $ref: "#/components/parameters/content-type"
       - $ref: "#/components/parameters/x-payment"
+      - $ref: "#/components/parameters/x-tag-custom"
 
     post:
-      summary: Posts a signed data item to arweave
+      summary: Posts a signed ANS-104 data item OR raw data to Arweave
       description: |
-        Uploads a signed ANS-104 data item to the bundler. Payment can be handled via:
+        **Two Upload Modes:**
+
+        **1. Traditional ANS-104 Upload (Client-Signed)**
+
+        Client creates and signs ANS-104 data item before uploading. The service detects ANS-104 format by checking the first 2 bytes (signature type 1-8).
+
+        Payment options:
         - Traditional balance (user has pre-loaded credits)
         - x402 payment (include X-PAYMENT header with EIP-3009 authorization)
+
+        **2. Raw Data Upload (Server-Signed, x402 Only)**
+
+        Simplified flow for AI agents and applications without ANS-104 signing capabilities. Requires RAW_DATA_UPLOADS_ENABLED=true on server.
+
+        The service automatically detects raw data (non-ANS-104) and:
+        - Returns 402 Payment Required if no X-PAYMENT header provided
+        - Creates and signs ANS-104 data item server-side using RAW_DATA_ITEM_JWK wallet
+        - Adds attribution tags: Bundler, Upload-Type, Payer-Address, Upload-Timestamp, Content-Type
+        - Validates x402 payment against payer's Ethereum address (not the signer)
+        - Returns response with both `owner` (server wallet) and `payer` (Ethereum address) fields
+
+        Request formats for raw data:
+        - Binary upload with X-Tag-* headers for custom tags
+        - JSON envelope: `{"data": "<base64>", "contentType": "...", "tags": [...]}`
 
         When using X-PAYMENT header, Content-Length must be present to enable fraud detection.
       tags:
         - Upload
       requestBody:
         required: true
-        description: A signed data item
+        description: A signed ANS-104 data item (binary) OR raw data (binary/JSON envelope for server-signing)
         content:
           application/octet-stream:
             schema:
               type: string
               format: binary
+              description: Traditional ANS-104 data item (client-signed)
+          application/json:
+            schema:
+              type: object
+              description: Raw data upload envelope (server-signed, x402 only)
+              properties:
+                data:
+                  type: string
+                  format: byte
+                  description: Base64-encoded raw data
+                  example: "SGVsbG8gV29ybGQh"
+                contentType:
+                  type: string
+                  description: MIME type of the data
+                  example: "text/plain"
+                tags:
+                  type: array
+                  description: Custom tags to add to the data item
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        example: "App-Name"
+                      value:
+                        type: string
+                        example: "MyApp"
 
       responses:
         "200":

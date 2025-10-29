@@ -23,6 +23,57 @@ The Upload Service integrates with the Payment Service to support multiple payme
 - **Account Balance**: Traditional credit-based uploads using pre-loaded account balance
 - **Free Uploads**: Allowlist-based free uploads for authorized addresses
 
+## Upload Methods
+
+### Traditional ANS-104 Uploads
+
+Standard flow where clients create and sign their own ANS-104 data items:
+- Client signs data item with their own wallet (Arweave, Ethereum, or Solana)
+- Supports single-request and multipart uploads (up to 10GB)
+- Full control over data item structure and tags
+
+### Raw Data Uploads (x402 Only)
+
+Simplified flow for AI agents and applications without crypto wallet capabilities:
+- **Server-signed**: Upload service creates and signs ANS-104 data items on behalf of the uploader
+- **x402 payment required**: Direct USDC payment via EIP-3009 (no balance needed)
+- **Automatic whitelisting**: Raw data item wallet is whitelisted (no credit checks)
+- **Attribution tracking**: Tags include payer address, upload type, and timestamp
+- **Backwards compatible**: Existing uploads continue to work unchanged
+
+#### Configuration
+
+Enable raw data uploads and configure the signing wallet:
+
+```bash
+# Enable raw data uploads
+RAW_DATA_UPLOADS_ENABLED=true
+
+# Wallet for signing raw data items (automatically whitelisted)
+# Use same wallet as TURBO_JWK_FILE for testing, separate for production
+RAW_DATA_ITEM_JWK_FILE=/path/to/raw-data-wallet.json
+
+# x402 payment configuration
+X402_NETWORK=base-sepolia
+USDC_CONTRACT_ADDRESS=0x036CbD53842c5426634e7929541eC2318f3dCF7e
+```
+
+#### Benefits of Wallet Separation
+
+- **Security**: Separate wallet for raw uploads limits exposure
+- **Accounting**: Easy to track all raw uploads (single owner address)
+- **Attribution**: Payer-Address tag tracks who actually paid for each upload
+- **Simplified Operations**: Whitelisted wallet doesn't need balance management
+
+#### Tags Added to Raw Data Items
+
+- `Bundler`: Service name (from APP_NAME env var)
+- `Upload-Type`: Set to "raw-data-x402"
+- `Payer-Address`: Ethereum address that provided x402 payment
+- `Upload-Timestamp`: Unix timestamp when created
+- `Content-Type`: User-provided MIME type
+- Custom tags from `X-Tag-*` HTTP headers
+
 ## Setting up the development environment
 
 ### System Package Installation

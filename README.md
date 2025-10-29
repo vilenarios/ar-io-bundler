@@ -84,6 +84,10 @@ JWT_SECRET=<generate with: openssl rand -hex 32>
 # Arweave Wallet (for bundle signing) - ABSOLUTE PATH
 TURBO_JWK_FILE=/full/path/to/ar-io-bundler/wallet.json
 
+# Raw Data Item Wallet (for signing raw uploads) - ABSOLUTE PATH
+# Use same wallet as TURBO_JWK_FILE for testing, separate for production
+RAW_DATA_ITEM_JWK_FILE=/full/path/to/ar-io-bundler/wallet.json
+
 # Wallet Addresses (MUST MATCH the wallet.json address)
 ARWEAVE_ADDRESS=<your-arweave-address>
 ARIO_ADDRESS=<your-arweave-address>
@@ -839,6 +843,7 @@ PORT=4001 NODE_ENV=production pm2 start lib/index.js --name payment-service
 - ✅ **ANS-104 Bundling**: Standards-compliant data item bundling
 - ✅ **Multi-signature Support**: Arweave, Ethereum, Solana, and more
 - ✅ **Multipart Uploads**: Support for large files (up to 10GB)
+- ✅ **Raw Data Uploads**: Server-signed uploads for AI agents with x402 payment (no client-side crypto needed)
 - ✅ **Crypto Payments**: Multiple blockchain payment options
 - ✅ **x402 Protocol**: Coinbase HTTP 402 payments with USDC
 - ✅ **Stripe Integration**: Credit card payment processing
