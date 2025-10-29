@@ -229,11 +229,22 @@ export class X402Service {
           facilitator: networkConfig.facilitatorUrl,
         });
 
+        // Ensure validAfter and validBefore are strings (facilitator expects strings)
+        if (paymentPayload.payload?.authorization) {
+          const auth = paymentPayload.payload.authorization as any;
+          if (typeof auth.validAfter === "number") {
+            auth.validAfter = auth.validAfter.toString();
+          }
+          if (typeof auth.validBefore === "number") {
+            auth.validBefore = auth.validBefore.toString();
+          }
+        }
+
         const response = await axios.post(
           `${networkConfig.facilitatorUrl}/settle`,
           {
             x402Version: 1,
-            paymentHeader,
+            paymentPayload, // Send decoded and corrected payload
             paymentRequirements: requirements,
           },
           {
@@ -252,14 +263,27 @@ export class X402Service {
         }
 
         const result = response.data;
+
+        // Facilitator returns "transaction" field, not "transactionHash"
+        const txHash = result.transaction || result.transactionHash;
+
         logger.info("X402 payment settled via facilitator", {
-          txHash: result.transactionHash,
+          txHash,
           network: result.network,
         });
 
+        // Check if transaction hash is present
+        if (!txHash) {
+          logger.warn("Facilitator did not return transaction hash", { result });
+          return {
+            success: false,
+            error: "Facilitator settlement succeeded but did not return transaction hash",
+          };
+        }
+
         return {
           success: true,
-          transactionHash: result.transactionHash,
+          transactionHash: txHash,
           network: result.network,
         };
       }
@@ -354,11 +378,27 @@ export class X402Service {
     facilitatorUrl: string
   ): Promise<X402VerificationResult> {
     try {
+      // Decode the payment header to get the payload
+      const paymentPayload = JSON.parse(
+        Buffer.from(paymentHeader, "base64").toString("utf8")
+      );
+
+      // Ensure validAfter and validBefore are strings (facilitator expects strings)
+      if (paymentPayload.payload?.authorization) {
+        const auth = paymentPayload.payload.authorization as any;
+        if (typeof auth.validAfter === "number") {
+          auth.validAfter = auth.validAfter.toString();
+        }
+        if (typeof auth.validBefore === "number") {
+          auth.validBefore = auth.validBefore.toString();
+        }
+      }
+
       const response = await axios.post(
         `${facilitatorUrl}/verify`,
         {
           x402Version: 1,
-          paymentHeader,
+          paymentPayload,
           paymentRequirements: requirements,
         },
         {
@@ -376,7 +416,16 @@ export class X402Service {
 
       return response.data;
     } catch (error) {
-      logger.error("Facilitator verification failed", { error });
+      // Log full error including response body for debugging
+      const errorDetails: any = { error };
+      if (error && typeof error === "object" && "response" in error) {
+        const axiosError = error as any;
+        errorDetails.responseStatus = axiosError.response?.status;
+        errorDetails.responseData = axiosError.response?.data;
+        errorDetails.responseHeaders = axiosError.response?.headers;
+      }
+      logger.error("Facilitator verification failed", errorDetails);
+
       return {
         isValid: false,
         invalidReason:

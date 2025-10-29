@@ -18,30 +18,49 @@ import { Next } from "koa";
 
 import { KoaContext } from "../server";
 
-// cspell:disable -- Turbo Dev env defaults
-const defaultArAddress = "8jNb-iG3a3XByFuZnZ_MWMQSZE0zvxPMaMMBNMYegY4";
-const defaultArioAddress = "NlQZT84j3RXav1Y9WRKZWd360D51os3PXH3aDDFTqjk";
-const defaultEthAddress = "0x9B13eb5096264B12532b8C648Eba4A662b4078ce";
-const defaultSolAddress = "Bg5HnSVtgHVXEGqJYWqxWad9Vrcgva9JrKw3XFSEGvaB";
-const defaultKyveAddress = "kyve18yazy0nuyvctmygxr7uhddwd5clxltmgtqgc8p"; // cspell:enable
+// Build wallet addresses from environment variables
+// Only include addresses that are actually configured
+function buildWalletAddresses(): Record<string, string> {
+  const addresses: Record<string, string> = {};
 
-export const walletAddresses = {
-  arweave: process.env.ARWEAVE_ADDRESS ?? defaultArAddress,
-  ario: process.env.ARIO_ADDRESS ?? defaultArioAddress,
-  ethereum: process.env.ETHEREUM_ADDRESS ?? defaultEthAddress,
-  solana: process.env.SOLANA_ADDRESS ?? defaultSolAddress,
-  ed25519: process.env.SOLANA_ADDRESS ?? defaultSolAddress,
-  matic: process.env.MATIC_ADDRESS ?? defaultEthAddress,
-  pol: process.env.MATIC_ADDRESS ?? defaultEthAddress,
-  "base-eth": process.env.BASE_ETH_ADDRESS ?? defaultEthAddress,
-  kyve: process.env.KYVE_ADDRESS ?? defaultKyveAddress,
-} as const;
+  if (process.env.ARWEAVE_ADDRESS) {
+    addresses.arweave = process.env.ARWEAVE_ADDRESS;
+  }
+  if (process.env.ETHEREUM_ADDRESS) {
+    addresses.ethereum = process.env.ETHEREUM_ADDRESS;
+  }
+  if (process.env.SOLANA_ADDRESS) {
+    addresses.solana = process.env.SOLANA_ADDRESS;
+    addresses.ed25519 = process.env.SOLANA_ADDRESS; // Alias for Solana
+  }
+  if (process.env.MATIC_ADDRESS) {
+    addresses.matic = process.env.MATIC_ADDRESS;
+    addresses.pol = process.env.MATIC_ADDRESS; // Alias for Polygon
+  }
+  if (process.env.BASE_ETH_ADDRESS) {
+    addresses["base-eth"] = process.env.BASE_ETH_ADDRESS;
+  }
+  if (process.env.KYVE_ADDRESS) {
+    addresses.kyve = process.env.KYVE_ADDRESS;
+  }
+
+  return addresses;
+}
+
+// Export for use by other modules (gateway validation, etc.)
+export const walletAddresses = buildWalletAddresses();
 
 export async function rootResponse(ctx: KoaContext, next: Next) {
+  // Get public-facing gateway FQDNs from environment
+  const gateways = process.env.PUBLIC_GATEWAY_FQDNS
+    ? process.env.PUBLIC_GATEWAY_FQDNS.split(",").map((url) => url.trim())
+    : [ctx.state.gatewayMap.arweave.endpoint];
+
   ctx.body = {
     version: "0.2.0",
     addresses: walletAddresses,
-    gateway: ctx.state.gatewayMap.arweave.endpoint,
+    gateway: gateways[0], // Primary gateway
+    gateways: gateways, // All gateways
   };
   return next();
 }

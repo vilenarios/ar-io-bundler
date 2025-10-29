@@ -390,6 +390,16 @@ export interface X402NetworkConfig {
 }
 
 export const x402Networks: Record<string, X402NetworkConfig> = {
+  // Base mainnet (primary name used by AR.IO Gateway)
+  "base": {
+    chainId: 8453,
+    usdcAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    rpcUrl: process.env.BASE_MAINNET_RPC_URL || "https://mainnet.base.org",
+    facilitatorUrl: process.env.X402_FACILITATOR_URL_BASE,
+    enabled: process.env.X402_BASE_ENABLED !== "false",
+    minConfirmations: +(process.env.X402_BASE_MIN_CONFIRMATIONS || 1),
+  },
+  // Base mainnet (alternative name for compatibility)
   "base-mainnet": {
     chainId: 8453,
     usdcAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",

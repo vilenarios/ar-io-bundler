@@ -139,12 +139,17 @@ export async function x402PaymentRoute(ctx: KoaContext, next: Next) {
       throw new Error(`Network configuration not found for ${network}`);
     }
 
+    // Build absolute URL for resource (required by x402 facilitator)
+    // Use configured public URL for the upload service
+    const uploadServicePublicUrl = process.env.UPLOAD_SERVICE_PUBLIC_URL || "http://localhost:3001";
+    const resourceUrl = `${uploadServicePublicUrl}/v1/tx`;
+
     // Build payment requirements for verification
     const requirements = {
       scheme: "exact",
       network,
       maxAmountRequired: mode === "topup" ? authorization.value : usdcAmountRequired,
-      resource: "/v1/tx",
+      resource: resourceUrl,
       description: `Upload ${byteCount || 0} bytes to Arweave via Turbo`,
       mimeType: "application/octet-stream",
       asset: networkConfig.usdcAddress,

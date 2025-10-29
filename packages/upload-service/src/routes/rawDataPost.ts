@@ -301,12 +301,17 @@ function send402PaymentRequired(
 
   logger.info("Sending 402 Payment Required", { byteCount, mimeType });
 
+  // Build absolute URL for the resource (required by x402 facilitator)
+  const protocol = ctx.request.protocol || "https";
+  const host = ctx.request.host || ctx.request.hostname || "localhost:3001";
+  const resourceUrl = `${protocol}://${host}/v1/tx`;
+
   // Get x402 payment requirements
   const paymentRequirements = {
-    scheme: "eip-3009",
+    scheme: "exact",
     network: process.env.X402_NETWORK || "base-sepolia",
     maxAmountRequired: calculateUSDCAmount(byteCount),
-    resource: "/v1/tx",
+    resource: resourceUrl,
     description: `Upload ${byteCount} bytes to Arweave via AR.IO Bundler`,
     mimeType: mimeType || "application/octet-stream",
     payTo: process.env.ETHEREUM_ADDRESS || process.env.BASE_ETH_ADDRESS || "",
