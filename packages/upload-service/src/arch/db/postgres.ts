@@ -61,6 +61,7 @@ import {
   RePackDataItemDbInsert,
   SeededBundle,
   SeededBundleDBResult,
+  X402Payment,
 } from "../../types/dbTypes";
 import {
   DataItemId,
@@ -1394,6 +1395,59 @@ export class PostgresDatabase implements Database {
         tableNames.failedDataItem
       ).insert<FailedDataItemDBInsert>(dbInsert);
     });
+  }
+
+  // x402 Payment Methods
+  async insertX402Payment(params: {
+    paymentId: string;
+    txHash: string;
+    network: string;
+    payerAddress: string;
+    usdcAmount: string;
+    wincAmount: Winston;
+    dataItemId?: DataItemId;
+    byteCount: number;
+  }): Promise<void> {
+    await this.writer("x402_payments").insert({
+      payment_id: params.paymentId,
+      tx_hash: params.txHash,
+      network: params.network,
+      payer_address: params.payerAddress,
+      usdc_amount: params.usdcAmount,
+      winc_amount: params.wincAmount.toString(),
+      data_item_id: params.dataItemId || null,
+      byte_count: params.byteCount,
+    });
+  }
+
+  async linkX402PaymentToDataItem(
+    paymentId: string,
+    dataItemId: DataItemId
+  ): Promise<void> {
+    await this.writer("x402_payments")
+      .where({ payment_id: paymentId })
+      .update({ data_item_id: dataItemId });
+  }
+
+  async getX402PaymentsByPayer(
+    payerAddress: string
+  ): Promise<X402Payment[]> {
+    const rows = await this.reader("x402_payments")
+      .where({ payer_address: payerAddress })
+      .orderBy("created_at", "desc");
+
+    return rows.map((row: any) => ({
+      paymentId: row.payment_id,
+      txHash: row.tx_hash,
+      network: row.network,
+      payerAddress: row.payer_address,
+      usdcAmount: row.usdc_amount,
+      wincAmount: W(row.winc_amount),
+      dataItemId: row.data_item_id,
+      byteCount: +row.byte_count,
+      createdAt: row.created_at,
+      settledAt: row.settled_at,
+    }));
   }
 }
 

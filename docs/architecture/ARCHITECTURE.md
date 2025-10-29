@@ -896,6 +896,14 @@ USDC_CONTRACT_ADDRESS=0x036CbD53842c5426634e7929541eC2318f3dCF7e
 2. Client → POST /v1/tx (raw data + X-PAYMENT header)
    ├─ Parse raw data and custom tags (X-Tag-* headers)
    ├─ Extract payer address from X-PAYMENT header (EIP-3009)
+   ├─ Calculate pricing:
+   │  ├─ Get Winston cost from Arweave gateway
+   │  ├─ Convert Winston → USDC with 10% buffer (X402PricingOracle)
+   │  └─ Enforce 1000 atomic unit minimum (0.001 USDC)
+   ├─ Verify and settle x402 payment:
+   │  ├─ Validate EIP-712 signature and payment requirements
+   │  ├─ Settle USDC transfer via facilitator (EIP-3009)
+   │  └─ Receive transaction hash from blockchain
    ├─ Create ANS-104 data item server-side:
    │  ├─ Sign with RAW_DATA_ITEM_JWK (Arweave wallet)
    │  └─ Add attribution tags:
@@ -904,22 +912,23 @@ USDC_CONTRACT_ADDRESS=0x036CbD53842c5426634e7929541eC2318f3dCF7e
    │     ├─ Payer-Address: Ethereum address that paid
    │     ├─ Upload-Timestamp: Unix timestamp
    │     ├─ Content-Type: User-provided MIME type
+   │     ├─ X402-Tx-Hash: Blockchain transaction hash
+   │     ├─ X402-Payment-ID: Unique payment identifier (UUID)
+   │     ├─ X402-Network: Payment network (e.g., "base")
    │     └─ Custom tags from X-Tag-* headers
-   ├─ Verify x402 payment:
-   │  ├─ Validate against PAYER's Ethereum address (signatureType 3)
-   │  ├─ Settle USDC transfer via EIP-3009
-   │  └─ Hybrid mode: Excess tops up payer's balance
    ├─ Store data item in MinIO
    ├─ Insert into new_data_item:
    │  ├─ ownerPublicAddress: Raw data item wallet (whitelisted)
    │  ├─ signatureType: 1 (Arweave - data item signer)
    │  └─ assessedWinstonPrice: From payment
+   ├─ Store x402 payment record in payment_service database
    ├─ Enqueue newDataItem
    └─ Return 201 with:
       ├─ id: Data item ID
       ├─ owner: Raw data item wallet address (signer)
       ├─ payer: Ethereum address (actual payer)
-      └─ x402Payment: Transaction details
+      ├─ x402Payment: { paymentId, transactionHash, network, mode }
+      └─ X-Payment-Response header: Base64-encoded payment confirmation
 
 3. Worker → (Joins standard pipeline at planBundle)
    ├─ No special handling needed
@@ -980,8 +989,9 @@ The x402 protocol is the **primary payment method**, implementing Coinbase's HTT
 ```
 1. Client → GET /v1/x402/price/:signatureType/:address?bytes=N
    ├─ Calculate Winston cost from byte count
-   ├─ Add 15% pricing buffer for volatility
+   ├─ Add 10% pricing buffer for volatility (X402PricingOracle)
    ├─ Convert Winston → USD → USDC (via CoinGecko AR/USD price)
+   ├─ Enforce 1000 atomic unit minimum (0.001 USDC)
    ├─ Generate PaymentRequirements for all enabled networks
    └─ Return 200 OK with payment requirements array
 

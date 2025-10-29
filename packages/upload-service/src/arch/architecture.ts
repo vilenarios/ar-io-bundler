@@ -32,6 +32,7 @@ import { PostgresDatabase } from "./db/postgres";
 import { getElasticacheService } from "./elasticacheService";
 import { ObjectStore } from "./objectStore";
 import { PaymentService, TurboPaymentService } from "./payment";
+import { X402Service, x402Networks } from "./x402Service";
 
 export interface Architecture {
   objectStore: ObjectStore;
@@ -39,6 +40,7 @@ export interface Architecture {
   dataItemOffsetsDB: DataItemOffsetsDB;
   cacheService: CacheService;
   paymentService: PaymentService;
+  x402Service: X402Service;
   logger: winston.Logger;
   arweaveGateway: ArweaveGateway;
   getArweaveWallet: () => Promise<JWKInterface>;
@@ -58,6 +60,7 @@ export const defaultArchitecture: Architecture = {
   objectStore: getS3ObjectStore(),
   cacheService: getElasticacheService(),
   paymentService: new TurboPaymentService(),
+  x402Service: new X402Service(x402Networks),
   logger: globalLogger,
   getArweaveWallet: () => getArweaveWallet(),
   getRawDataItemWallet: () => getRawDataItemWallet(),

@@ -418,12 +418,13 @@ components:
           example: true
         paymentId:
           type: string
-          description: Unique identifier for this payment transaction
+          format: uuid
+          description: Unique identifier for this payment transaction (UUID)
           example: "550e8400-e29b-41d4-a716-446655440000"
-        txHash:
+        transactionHash:
           type: string
-          description: Blockchain transaction hash (for on-chain verification)
-          example: "0xabc123..."
+          description: Blockchain transaction hash for the USDC transfer (for on-chain verification)
+          example: "0xb8a52725cdc816d060392dcecaa1528872acf9ea0bd097a86e2432dd5d2213ca"
         network:
           type: string
           description: Network where payment was made

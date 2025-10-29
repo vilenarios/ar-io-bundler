@@ -27,6 +27,7 @@ import {
   PostedBundle,
   PostedNewDataItem,
   SeededBundle,
+  X402Payment,
 } from "../../types/dbTypes";
 import {
   DataItemId,
@@ -190,6 +191,25 @@ export interface Database {
     dataItemId: DataItemId;
     failedReason: DataItemFailedReason;
   }): Promise<void>;
+
+  // x402 Payment Methods
+  insertX402Payment(params: {
+    paymentId: string;
+    txHash: string;
+    network: string;
+    payerAddress: string;
+    usdcAmount: string;
+    wincAmount: Winston;
+    dataItemId?: DataItemId;
+    byteCount: number;
+  }): Promise<void>;
+
+  linkX402PaymentToDataItem(
+    paymentId: string,
+    dataItemId: DataItemId
+  ): Promise<void>;
+
+  getX402PaymentsByPayer(payerAddress: string): Promise<X402Payment[]>;
 }
 
 export type UpdateDataItemsToPermanentParams = {

@@ -67,31 +67,142 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
     });
   }
 
-  // Extract payer address and payment metadata from x402 payment header if provided
-  let payerAddress: string | undefined;
-  let paymentMetadata: { nonce: string; validAfter: string; validBefore: string } | undefined;
+  // Check for x402 payment header first (before creating data item)
   const paymentHeaderValue = ctx.headers["x-payment"] as string | undefined;
-  if (paymentHeaderValue) {
-    try {
-      const paymentPayload = JSON.parse(Buffer.from(paymentHeaderValue, "base64").toString("utf8"));
-      const authorization = paymentPayload.payload?.authorization;
-      payerAddress = authorization?.from;
+  const contentLengthHeader = ctx.headers["content-length"];
 
-      // Extract payment authorization metadata for tags
-      if (authorization) {
-        paymentMetadata = {
-          nonce: authorization.nonce || "",
-          validAfter: authorization.validAfter?.toString() || "",
-          validBefore: authorization.validBefore?.toString() || "",
-        };
-      }
-    } catch (error) {
-      logger.warn("Failed to parse payment header for payer address", { error });
-    }
+  if (!paymentHeaderValue) {
+    // No payment provided - return 402 Payment Required
+    return await send402PaymentRequired(ctx, parsedRequest.data.length, parsedRequest.contentType);
   }
 
-  // Create the data item server-side using the RAW DATA ITEM WALLET
-  // This wallet is whitelisted and doesn't require credits
+  if (!contentLengthHeader) {
+    return errorResponse(ctx, {
+      errorMessage: "Content-Length header is required when providing payment",
+      status: 400,
+    });
+  }
+
+  // Parse x402 payment header to extract payer and payment details
+  let payerAddress: string;
+  let paymentPayload: any;
+  try {
+    paymentPayload = JSON.parse(Buffer.from(paymentHeaderValue, "base64").toString("utf8"));
+    const authorization = paymentPayload.payload?.authorization;
+    payerAddress = authorization?.from;
+
+    if (!payerAddress) {
+      throw new Error("Payer address not found in payment header");
+    }
+
+    logger.info("Parsed x402 payment header", {
+      payerAddress,
+      network: paymentPayload.network,
+      value: authorization.value,
+    });
+  } catch (error) {
+    logger.error("Failed to parse payment header", { error });
+    return errorResponse(ctx, {
+      errorMessage: "Invalid payment header format",
+      status: 400,
+    });
+  }
+
+  // Calculate pricing for the upload
+  // Estimate final data item size (raw data + ANS-104 overhead)
+  const estimatedDataItemSize = parsedRequest.data.length + 1500; // ~1.5KB for headers/tags
+
+  logger.info("Calculating pricing for x402 upload", {
+    rawDataSize: parsedRequest.data.length,
+    estimatedDataItemSize,
+  });
+
+  // Get Winston cost from Arweave gateway
+  const winstonCost = await ctx.state.arweaveGateway.getWinstonPriceForByteCount(
+    estimatedDataItemSize
+  );
+
+  // Convert Winston to USDC
+  const { X402PricingOracle } = await import("../utils/x402Pricing");
+  const x402Oracle = new X402PricingOracle();
+  const usdcAmountRequired = await x402Oracle.getUSDCForWinston(W(winstonCost.toString()));
+
+  // Build payment requirements for verification
+  const uploadServicePublicUrl = process.env.UPLOAD_SERVICE_PUBLIC_URL || "http://localhost:3001";
+  const networkConfig = ctx.state.x402Service.getNetworkConfig(paymentPayload.network);
+
+  if (!networkConfig) {
+    return errorResponse(ctx, {
+      errorMessage: `Network ${paymentPayload.network} is not configured`,
+      status: 400,
+    });
+  }
+
+  const requirements = {
+    scheme: "exact",
+    network: paymentPayload.network,
+    maxAmountRequired: usdcAmountRequired,
+    resource: `${uploadServicePublicUrl}/v1/tx`,
+    description: `Upload ${estimatedDataItemSize} bytes to Arweave via AR.IO Bundler`,
+    mimeType: parsedRequest.contentType || "application/octet-stream",
+    asset: networkConfig.usdcAddress,
+    payTo: paymentPayload.payload.authorization.to,
+    maxTimeoutSeconds: 3600,
+    extra: {
+      name: "USD Coin",
+      version: "2",
+    },
+  };
+
+  // Verify and settle x402 payment
+  logger.info("Settling x402 payment", {
+    payerAddress,
+    network: paymentPayload.network,
+    usdcAmountRequired,
+  });
+
+  let settlement;
+  try {
+    // Verify payment first
+    const verification = await ctx.state.x402Service.verifyPayment(
+      paymentHeaderValue,
+      requirements
+    );
+
+    if (!verification.isValid) {
+      return errorResponse(ctx, {
+        errorMessage: verification.invalidReason || "Payment verification failed",
+        status: 402,
+      });
+    }
+
+    // Settle payment on-chain
+    settlement = await ctx.state.x402Service.settlePayment(
+      paymentHeaderValue,
+      requirements
+    );
+
+    if (!settlement.success) {
+      throw new Error(settlement.error || "Payment settlement failed");
+    }
+
+    logger.info("X402 payment settled successfully", {
+      txHash: settlement.transactionHash,
+      network: settlement.network,
+    });
+  } catch (error) {
+    logger.error("X402 payment failed", { error });
+    return errorResponse(ctx, {
+      errorMessage: error instanceof Error ? error.message : "Payment failed",
+      status: 402,
+    });
+  }
+
+  // Generate payment ID for tracking
+  const { randomUUID } = await import("crypto");
+  const paymentId = randomUUID();
+
+  // NOW create the data item with TX hash in tags
   let dataItem: DataItem;
   let rawDataItemWallet;
   try {
@@ -101,22 +212,23 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
         data: parsedRequest.data,
         tags: parsedRequest.tags,
         contentType: parsedRequest.contentType,
-        payerAddress, // Track who actually paid for this upload
-        paymentMetadata, // Add payment authorization metadata as tags
+        payerAddress,
+        x402Payment: {
+          txHash: settlement.transactionHash!,
+          paymentId,
+          network: settlement.network!,
+        },
       },
       rawDataItemWallet
     );
 
-    logger.info("Created and signed data item with raw data item wallet", {
+    logger.info("Created data item with x402 payment tags", {
       dataItemId: dataItem.id,
-      size: dataItem.getRaw().length,
-      payerAddress,
+      txHash: settlement.transactionHash,
+      paymentId,
     });
   } catch (error) {
-    logger.error("Failed to create data item", {
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-    });
+    logger.error("Failed to create data item", { error });
     return errorResponse(ctx, {
       errorMessage: "Failed to create data item from raw data",
       status: 500,
@@ -130,16 +242,14 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
   const inMemoryDataItem = new InMemoryDataItem(dataItemBuffer);
 
   const signatureB64Url = await inMemoryDataItem.getSignature();
-  const signature = fromB64Url(signatureB64Url); // Convert to Buffer for database
+  const signature = fromB64Url(signatureB64Url);
   const target = await inMemoryDataItem.getTarget();
   const anchor = await inMemoryDataItem.getAnchor();
   const numTagsBytes = await inMemoryDataItem.getNumTagsBytes();
 
-  // Calculate payload data start based on ANS-104 structure
-  // Structure: signatureType(2) + signature(512) + owner(512) + target(1/33) + anchor(1/33) + tags
   const signatureTypeLength = 2;
-  const signatureLength = 512; // Arweave signature
-  const ownerLength = 512; // Arweave public key
+  const signatureLength = 512;
+  const ownerLength = 512;
   const targetLength = target ? 33 : 1;
   const anchorLength = anchor ? 33 : 1;
 
@@ -149,66 +259,28 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
     ownerLength +
     targetLength +
     anchorLength +
-    16 + // tags count (8 bytes) + tags bytes length (8 bytes)
+    16 +
     numTagsBytes;
 
   const payloadContentType = parsedRequest.contentType || "application/octet-stream";
 
-  // Check for x402 payment header
-  const contentLengthHeader = ctx.headers["content-length"];
-
-  if (!paymentHeaderValue) {
-    // No payment provided - return 402 Payment Required
-    return send402PaymentRequired(ctx, byteCount, parsedRequest.contentType);
-  }
-
-  if (!contentLengthHeader) {
-    return errorResponse(ctx, {
-      errorMessage: "Content-Length header is required when providing payment",
-      status: 400,
-    });
-  }
-
-  logger.info("Verifying x402 payment", {
+  // Store x402 payment record in database
+  const wincPaid = await x402Oracle.getWinstonForUSDC(paymentPayload.payload.authorization.value);
+  await ctx.state.database.insertX402Payment({
+    paymentId,
+    txHash: settlement.transactionHash!,
+    network: settlement.network!,
+    payerAddress,
+    usdcAmount: paymentPayload.payload.authorization.value,
+    wincAmount: wincPaid,
     dataItemId: dataItem.id,
     byteCount,
-    payerAddress,
   });
 
-  // Verify and settle x402 payment
-  // Note: Payment is verified against the PAYER's address (who provided the payment)
-  // NOT the raw data item wallet (which is just the signer and is whitelisted)
-  let paymentResult;
-  try {
-    if (!payerAddress) {
-      throw new Error("Payer address not found in payment header");
-    }
-
-    paymentResult = await ctx.state.paymentService.verifyAndSettleX402Payment({
-      paymentHeader: paymentHeaderValue,
-      dataItemId: dataItem.id,
-      byteCount,
-      nativeAddress: payerAddress, // Use the payer's address, not the signer's
-      signatureType: 3, // Ethereum signature type (payer signs with their Ethereum wallet)
-      mode: "payg", // Force PAYG mode - x402 is stateless, no credit assignment
-    });
-
-    if (!paymentResult.success) {
-      throw new Error(paymentResult.error || "Payment verification failed");
-    }
-
-    logger.info("X402 payment verified and settled", {
-      paymentId: paymentResult.paymentId,
-      txHash: paymentResult.txHash,
-      mode: paymentResult.mode,
-    });
-  } catch (error) {
-    logger.error("X402 payment verification failed", { error });
-    return errorResponse(ctx, {
-      errorMessage: error instanceof Error ? error.message : "Payment verification failed",
-      status: 402,
-    });
-  }
+  logger.info("Stored x402 payment record", {
+    paymentId,
+    dataItemId: dataItem.id,
+  });
 
   // Store the data item (same flow as signed uploads)
   try {
@@ -222,8 +294,8 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
       payloadDataStart
     );
 
-    // Get assessed winston price (either paid or reserved)
-    const assessedWinstonPrice = paymentResult.wincPaid || paymentResult.wincReserved || W("0");
+    // Get assessed winston price from x402 payment
+    const assessedWinstonPrice = wincPaid;
 
     // Owner is the raw data item wallet (whitelisted, no credits required)
     const ownerPublicAddress = jwkToPublicArweaveAddress(rawDataItemWallet);
@@ -318,7 +390,7 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
     deadlineHeight: await ctx.state.arweaveGateway.getCurrentBlockHeight() + 50,
     dataCaches,
     fastFinalityIndexes,
-    winc: (paymentResult.wincPaid || paymentResult.wincReserved || W("0")).toString(),
+    winc: wincPaid.toString(),
   };
 
   // Sign receipt with raw data item wallet (the actual signer of the data item)
@@ -326,10 +398,10 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
 
   // Build x402 payment response header
   const x402PaymentResponse = {
-    paymentId: paymentResult.paymentId,
-    transactionHash: paymentResult.txHash,
-    network: paymentResult.network,
-    mode: paymentResult.mode,
+    paymentId,
+    transactionHash: settlement.transactionHash!,
+    network: settlement.network!,
+    mode: "payg", // x402 is always PAYG (no credit assignment)
   };
 
   // Return success response
@@ -347,10 +419,10 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
 
   logger.info("Raw data upload completed successfully with x402 payment", {
     dataItemId: dataItem.id,
-    x402PaymentId: paymentResult.paymentId,
-    x402TxHash: paymentResult.txHash,
-    x402Network: paymentResult.network,
-    x402Mode: paymentResult.mode,
+    x402PaymentId: paymentId,
+    x402TxHash: settlement.transactionHash,
+    x402Network: settlement.network,
+    x402Mode: "payg",
     payerAddress,
     message: "Payment metadata stored in response. TX hash and payment ID available via x402Payment object",
   });
@@ -359,31 +431,56 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
 /**
  * Send 402 Payment Required response with x402 payment requirements
  */
-function send402PaymentRequired(
+async function send402PaymentRequired(
   ctx: KoaContext,
   byteCount: number,
   mimeType?: string
-): void {
+): Promise<void> {
   const { logger } = ctx.state;
 
   logger.info("Sending 402 Payment Required", { byteCount, mimeType });
+
+  // Calculate accurate pricing using the same method as actual upload
+  const estimatedDataItemSize = byteCount + 1500; // ANS-104 overhead
+
+  // Get Winston cost from Arweave gateway
+  const winstonCost = await ctx.state.arweaveGateway.getWinstonPriceForByteCount(
+    estimatedDataItemSize
+  );
+
+  // Convert Winston to USDC using the pricing oracle
+  const { X402PricingOracle } = await import("../utils/x402Pricing");
+  const x402Oracle = new X402PricingOracle();
+  const usdcAmountRequired = await x402Oracle.getUSDCForWinston(winstonCost);
+
+  logger.info("Calculated x402 price quote", {
+    byteCount,
+    estimatedDataItemSize,
+    winstonCost: winstonCost.toString(),
+    usdcAmountRequired,
+  });
 
   // Build absolute URL for the resource (required by x402 facilitator)
   const protocol = ctx.request.protocol || "https";
   const host = ctx.request.host || ctx.request.hostname || "localhost:3001";
   const resourceUrl = `${protocol}://${host}/v1/tx`;
 
+  // Get network config for correct USDC address
+  const network = process.env.X402_NETWORK || "base-sepolia";
+  const networkConfig = ctx.state.x402Service.getNetworkConfig(network);
+  const usdcAddress = networkConfig?.usdcAddress || process.env.USDC_CONTRACT_ADDRESS || "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
+
   // Get x402 payment requirements
   const paymentRequirements = {
     scheme: "exact",
-    network: process.env.X402_NETWORK || "base-sepolia",
-    maxAmountRequired: calculateUSDCAmount(byteCount),
+    network,
+    maxAmountRequired: usdcAmountRequired,
     resource: resourceUrl,
-    description: `Upload ${byteCount} bytes to Arweave via AR.IO Bundler`,
+    description: `Upload ${estimatedDataItemSize} bytes to Arweave via AR.IO Bundler`,
     mimeType: mimeType || "application/octet-stream",
     payTo: process.env.ETHEREUM_ADDRESS || process.env.BASE_ETH_ADDRESS || "",
     maxTimeoutSeconds: 3600,
-    asset: process.env.USDC_CONTRACT_ADDRESS || "0x036CbD53842c5426634e7929541eC2318f3dCF7e", // Base Sepolia USDC
+    asset: usdcAddress,
     extra: {
       name: "USD Coin",
       version: "2",
@@ -397,16 +494,4 @@ function send402PaymentRequired(
     accepts: [paymentRequirements],
     error: "Payment required to upload data",
   };
-}
-
-/**
- * Calculate USDC amount for byte count
- * TODO: This should call the payment service for accurate pricing
- */
-function calculateUSDCAmount(byteCount: number): string {
-  // Rough estimate: $0.01 per MB
-  const mb = byteCount / (1024 * 1024);
-  const usdCents = Math.max(1, Math.ceil(mb)); // Minimum 1 cent
-  const usdcAtomicUnits = usdCents * 10000; // 6 decimals, so 0.01 USD = 10000
-  return usdcAtomicUnits.toString();
 }

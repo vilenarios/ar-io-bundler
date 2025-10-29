@@ -112,6 +112,9 @@ components:
         - Payer-Address: Ethereum address from X-PAYMENT
         - Upload-Timestamp: Unix timestamp
         - Content-Type: From Content-Type header
+        - X402-Tx-Hash: Blockchain transaction hash (if x402 payment)
+        - X402-Payment-ID: Unique payment identifier UUID (if x402 payment)
+        - X402-Network: Payment network e.g. "base" (if x402 payment)
       schema:
         type: string
         example: "MyApp"
@@ -210,19 +213,21 @@ components:
           properties:
             paymentId:
               type: string
-              description: Unique payment identifier
+              format: uuid
+              description: Unique payment identifier (UUID)
               example: "550e8400-e29b-41d4-a716-446655440000"
-            txHash:
+            transactionHash:
               type: string
-              description: Blockchain transaction hash
-              example: "0xabc123..."
+              description: Blockchain transaction hash for the USDC transfer
+              example: "0xb8a52725cdc816d060392dcecaa1528872acf9ea0bd097a86e2432dd5d2213ca"
             network:
               type: string
               description: Network where payment was made
               example: "base-mainnet"
             mode:
               type: string
-              description: Payment mode used
+              enum: [payg, topup, hybrid]
+              description: Payment mode - payg (pay-as-you-go, only for this upload), topup (credit entire amount to balance), hybrid (reserve for upload + credit excess)
               example: "hybrid"
     CreateMultipartUpload:
       type: object

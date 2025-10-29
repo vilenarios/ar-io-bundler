@@ -16,6 +16,7 @@
  */
 import {
   ByteCount,
+  DataItemId,
   PublicArweaveAddress,
   TransactionId,
   UploadId,
@@ -359,3 +360,17 @@ export type DataItemDbResults =
   | PlannedDataItemDBResult
   | PermanentDataItemDBResult
   | FailedDataItemDBResult;
+
+// x402 Payment Types
+export interface X402Payment {
+  paymentId: string;
+  txHash: string;
+  network: string;
+  payerAddress: string;
+  usdcAmount: string;
+  wincAmount: Winston;
+  dataItemId?: DataItemId;
+  byteCount: number;
+  createdAt: Timestamp;
+  settledAt: Timestamp;
+}

@@ -27,6 +27,11 @@ export interface CreateDataItemOptions {
     validAfter: string;
     validBefore: string;
   };
+  x402Payment?: {
+    txHash: string;
+    paymentId: string;
+    network: string;
+  };
   target?: string;
   anchor?: string;
 }
@@ -72,8 +77,7 @@ export async function createDataItemFromRaw(
     });
   }
 
-  // Add x402 payment authorization metadata
-  // Note: Blockchain tx hash and payment ID are added later (after settlement)
+  // Add x402 payment authorization metadata (if pre-settlement)
   if (options.paymentMetadata) {
     tags.push({
       name: "X402-Payment-Nonce",
@@ -86,6 +90,22 @@ export async function createDataItemFromRaw(
     tags.push({
       name: "X402-Valid-Before",
       value: options.paymentMetadata.validBefore,
+    });
+  }
+
+  // Add x402 payment transaction details (if post-settlement)
+  if (options.x402Payment) {
+    tags.push({
+      name: "X402-TX-Hash",
+      value: options.x402Payment.txHash,
+    });
+    tags.push({
+      name: "X402-Payment-ID",
+      value: options.x402Payment.paymentId,
+    });
+    tags.push({
+      name: "X402-Network",
+      value: options.x402Payment.network,
     });
   }
 

@@ -63,6 +63,7 @@ export async function createServer(
   const objectStore = arch.objectStore ?? defaultArchitecture.objectStore;
   const paymentService =
     arch.paymentService ?? defaultArchitecture.paymentService;
+  const x402Service = arch.x402Service ?? defaultArchitecture.x402Service;
   const cacheService = arch.cacheService ?? defaultArchitecture.cacheService;
 
   const getArweaveWallet =
@@ -91,6 +92,7 @@ export async function createServer(
       objectStore,
       cacheService,
       paymentService,
+      x402Service,
       arweaveGateway,
       getArweaveWallet,
       getRawDataItemWallet,

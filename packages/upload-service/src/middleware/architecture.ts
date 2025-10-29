@@ -29,6 +29,7 @@ export async function architectureMiddleware(
   ctx.state.objectStore = arch.objectStore;
   ctx.state.cacheService = arch.cacheService;
   ctx.state.paymentService = arch.paymentService;
+  ctx.state.x402Service = arch.x402Service;
   ctx.state.getArweaveWallet = arch.getArweaveWallet;
   ctx.state.getRawDataItemWallet = arch.getRawDataItemWallet;
   ctx.state.arweaveGateway = arch.arweaveGateway;
