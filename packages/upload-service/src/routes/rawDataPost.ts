@@ -67,13 +67,24 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
     });
   }
 
-  // Extract payer address from x402 payment header if provided
+  // Extract payer address and payment metadata from x402 payment header if provided
   let payerAddress: string | undefined;
+  let paymentMetadata: { nonce: string; validAfter: string; validBefore: string } | undefined;
   const paymentHeaderValue = ctx.headers["x-payment"] as string | undefined;
   if (paymentHeaderValue) {
     try {
       const paymentPayload = JSON.parse(Buffer.from(paymentHeaderValue, "base64").toString("utf8"));
-      payerAddress = paymentPayload.payload?.authorization?.from;
+      const authorization = paymentPayload.payload?.authorization;
+      payerAddress = authorization?.from;
+
+      // Extract payment authorization metadata for tags
+      if (authorization) {
+        paymentMetadata = {
+          nonce: authorization.nonce || "",
+          validAfter: authorization.validAfter?.toString() || "",
+          validBefore: authorization.validBefore?.toString() || "",
+        };
+      }
     } catch (error) {
       logger.warn("Failed to parse payment header for payer address", { error });
     }
@@ -91,6 +102,7 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
         tags: parsedRequest.tags,
         contentType: parsedRequest.contentType,
         payerAddress, // Track who actually paid for this upload
+        paymentMetadata, // Add payment authorization metadata as tags
       },
       rawDataItemWallet
     );
@@ -333,9 +345,14 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
     x402Payment: x402PaymentResponse,
   };
 
-  logger.info("Raw data upload completed successfully", {
+  logger.info("Raw data upload completed successfully with x402 payment", {
     dataItemId: dataItem.id,
-    paymentId: paymentResult.paymentId,
+    x402PaymentId: paymentResult.paymentId,
+    x402TxHash: paymentResult.txHash,
+    x402Network: paymentResult.network,
+    x402Mode: paymentResult.mode,
+    payerAddress,
+    message: "Payment metadata stored in response. TX hash and payment ID available via x402Payment object",
   });
 }
 

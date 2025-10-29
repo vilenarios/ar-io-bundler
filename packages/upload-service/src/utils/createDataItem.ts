@@ -22,6 +22,11 @@ export interface CreateDataItemOptions {
   tags?: Tag[];
   contentType?: string;
   payerAddress?: string;
+  paymentMetadata?: {
+    nonce: string;
+    validAfter: string;
+    validBefore: string;
+  };
   target?: string;
   anchor?: string;
 }
@@ -64,6 +69,23 @@ export async function createDataItemFromRaw(
     tags.push({
       name: "Payer-Address",
       value: options.payerAddress,
+    });
+  }
+
+  // Add x402 payment authorization metadata
+  // Note: Blockchain tx hash and payment ID are added later (after settlement)
+  if (options.paymentMetadata) {
+    tags.push({
+      name: "X402-Payment-Nonce",
+      value: options.paymentMetadata.nonce,
+    });
+    tags.push({
+      name: "X402-Valid-After",
+      value: options.paymentMetadata.validAfter,
+    });
+    tags.push({
+      name: "X402-Valid-Before",
+      value: options.paymentMetadata.validBefore,
     });
   }
 
