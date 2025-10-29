@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AR.IO x402 Upload - Signed Data Item</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.10.0/dist/ethers.umd.min.js"></script>
+  <script src="https://unpkg.com/@dha-team/arbundles@1.0.4/build/web/bundle.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 900px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 { color: #333; border-bottom: 3px solid #0070f3; padding-bottom: 10px; }
+    .step { margin: 20px 0; padding: 15px; background: #f9f9f9; border-left: 4px solid #0070f3; }
+    .step h3 { margin-top: 0; color: #0070f3; }
+    button {
+      background: #0070f3;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      border-radius: 5px;
+      cursor: pointer;
+      margin: 10px 5px 10px 0;
+    }
+    button:hover { background: #0051cc; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    .log {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 15px;
+      border-radius: 5px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      max-height: 400px;
+      overflow-y: auto;
+      margin: 20px 0;
+    }
+    .log-success { color: #4caf50; }
+    .log-error { color: #f44336; }
+    .log-info { color: #2196f3; }
+    .log-warning { color: #ff9800; }
+    .config { background: #fff3cd; border: 1px solid #ffc107; padding: 15px; border-radius: 5px; margin: 20px 0; }
+    input[type="text"], select { width: 100%; margin: 5px 0; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+    .tag-row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+    .tag-row input { margin: 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚀 AR.IO x402 Upload with Signed Data Item</h1>
+
+    <div class="config">
+      <h3>⚙️ Configuration</h3>
+      <label>Upload Service URL:
+        <input type="text" id="uploadUrl" value="https://upload.services.vilenarios.com">
+      </label>
+      <label>Payment Service URL:
+        <input type="text" id="paymentUrl" value="https://payment.services.vilenarios.com">
+      </label>
+      <label>Network:
+        <select id="network">
+          <option value="base-sepolia">Base Sepolia (Testnet)</option>
+          <option value="base">Base Mainnet</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="step">
+      <h3>Step 1: Connect Wallet</h3>
+      <button id="connectBtn">Connect MetaMask</button>
+      <button id="addUsdcBtn" style="background: #6c757d;" disabled>Add USDC to MetaMask</button>
+      <div id="walletInfo"></div>
+    </div>
+
+    <div class="step">
+      <h3>Step 2: Select File</h3>
+      <input type="file" id="fileInput">
+      <div id="fileInfo"></div>
+    </div>
+
+    <div class="step">
+      <h3>Step 3: Custom Tags (Optional)</h3>
+      <p style="font-size: 13px; color: #666;">Add custom metadata tags to your upload</p>
+      <div id="tagsContainer">
+        <div class="tag-row">
+          <input type="text" placeholder="Tag name" class="tag-name" style="width: 200px;">
+          <input type="text" placeholder="Tag value" class="tag-value" style="width: 300px;">
+        </div>
+      </div>
+      <button id="addTagBtn" style="background: #6c757d; font-size: 14px; padding: 8px 16px;">+ Add Another Tag</button>
+    </div>
+
+    <div class="step">
+      <h3>Step 4: Upload & Pay</h3>
+      <button id="uploadBtn" disabled>Upload with USDC Payment</button>
+    </div>
+
+    <h3>📋 Log</h3>
+    <div class="log" id="log"></div>
+  </div>
+
+  <script>
+    let provider;
+    let signer;
+    let userAddress;
+    let selectedFile;
+
+    const NETWORK_CONFIG = {
+      'base-sepolia': {
+        chainId: 84532,
+        usdcAddress: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+        name: 'Base Sepolia',
+      },
+      'base': {
+        chainId: 8453,
+        usdcAddress: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // Native USDC
+        usdcBridgedAddress: '0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA', // USDbC (Bridged)
+        name: 'Base Mainnet',
+      },
+    };
+
+    function log(message, type = 'info') {
+      const logDiv = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.className = `log-${type}`;
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      logDiv.appendChild(entry);
+      logDiv.scrollTop = logDiv.scrollHeight;
+      console.log(message);
+    }
+
+    // Simple MetaMask detection on page load
+    window.addEventListener('load', () => {
+      log('Page loaded', 'info');
+      if (!window.ethereum) {
+        log('❌ MetaMask not detected! Please install MetaMask and make sure you are accessing this page via HTTP (not file://)', 'error');
+        document.getElementById('connectBtn').textContent = 'MetaMask Not Found';
+        document.getElementById('connectBtn').disabled = true;
+      } else if (!window.ethereum.isMetaMask) {
+        log('⚠️ Different wallet detected. Please use MetaMask for best compatibility.', 'warning');
+      } else {
+        log('✅ MetaMask detected!', 'success');
+      }
+    });
+
+    document.getElementById('connectBtn').addEventListener('click', async () => {
+      try {
+        if (!window.ethereum) {
+          alert('MetaMask not found!\n\n1. Install MetaMask from https://metamask.io\n2. Make sure you are accessing this page via http:// (not file://)');
+          return;
+        }
+
+        log('Requesting MetaMask connection...', 'info');
+
+        // Request accounts
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        userAddress = accounts[0];
+
+        // Create ethers provider
+        provider = new ethers.BrowserProvider(window.ethereum);
+        signer = await provider.getSigner();
+
+        log(`✅ Connected: ${userAddress}`, 'success');
+
+        // Check network
+        const networkKey = document.getElementById('network').value;
+        const config = NETWORK_CONFIG[networkKey];
+        const network = await provider.getNetwork();
+
+        log(`Current network: chainId ${network.chainId}`, 'info');
+
+        if (Number(network.chainId) !== config.chainId) {
+          log(`⚠️ Please switch to ${config.name}`, 'warning');
+          try {
+            await window.ethereum.request({
+              method: 'wallet_switchEthereumChain',
+              params: [{ chainId: `0x${config.chainId.toString(16)}` }],
+            });
+            log(`✅ Switched to ${config.name}`, 'success');
+          } catch (err) {
+            log(`Failed to switch network: ${err.message}`, 'error');
+          }
+        }
+
+        // Check USDC balance (native USDC)
+        log(`Checking USDC balance for address: ${userAddress}`, 'info');
+        log(`Using USDC contract: ${config.usdcAddress}`, 'info');
+        log(`Connected to chainId: ${network.chainId}`, 'info');
+
+        const usdcContract = new ethers.Contract(
+          config.usdcAddress,
+          ['function balanceOf(address) view returns (uint256)'],
+          provider
+        );
+        const balance = await usdcContract.balanceOf(userAddress);
+        log(`Raw balance: ${balance.toString()}`, 'info');
+        const balanceFormatted = ethers.formatUnits(balance, 6);
+        log(`Formatted balance: ${balanceFormatted} USDC`, 'info');
+
+        // Also check USDbC if on Base Mainnet
+        let usdcbBalance = 0;
+        let usdcbFormatted = '0.0';
+        if (config.usdcBridgedAddress) {
+          const usdcbContract = new ethers.Contract(
+            config.usdcBridgedAddress,
+            ['function balanceOf(address) view returns (uint256)'],
+            provider
+          );
+          usdcbBalance = await usdcbContract.balanceOf(userAddress);
+          usdcbFormatted = ethers.formatUnits(usdcbBalance, 6);
+        }
+
+        let balanceHtml = `
+          <p>✅ Connected: ${userAddress}</p>
+          <p>🌐 Network: ${config.name}</p>
+          <p>💵 USDC Balance: ${balanceFormatted} USDC</p>
+        `;
+
+        // Check for USDbC only if balance is 0 and warn user
+        if (config.usdcBridgedAddress && parseFloat(balanceFormatted) === 0) {
+          if (parseFloat(usdcbFormatted) > 0) {
+            balanceHtml += `<p style="color: #ff9800;">⚠️ You have ${usdcbFormatted} USDbC but our x402 requires native USDC. <a href="https://app.uniswap.org" target="_blank" style="color: #0070f3;">Swap USDbC → USDC</a></p>`;
+          }
+        }
+
+        document.getElementById('walletInfo').innerHTML = balanceHtml;
+
+        log(`Native USDC Balance: ${balanceFormatted} USDC`, 'info');
+        if (config.usdcBridgedAddress) {
+          log(`USDbC Balance: ${usdcbFormatted} USDbC`, 'info');
+        }
+
+        if (selectedFile) {
+          document.getElementById('uploadBtn').disabled = false;
+        }
+
+        // Enable "Add USDC" button
+        document.getElementById('addUsdcBtn').disabled = false;
+
+      } catch (error) {
+        log(`❌ Connection failed: ${error.message}`, 'error');
+      }
+    });
+
+    document.getElementById('addUsdcBtn').addEventListener('click', async () => {
+      try {
+        const networkKey = document.getElementById('network').value;
+        const config = NETWORK_CONFIG[networkKey];
+
+        log(`Adding USDC token (${config.usdcAddress}) to MetaMask...`, 'info');
+
+        await window.ethereum.request({
+          method: 'wallet_watchAsset',
+          params: {
+            type: 'ERC20',
+            options: {
+              address: config.usdcAddress,
+              symbol: 'USDC',
+              decimals: 6,
+              image: 'https://cryptologos.cc/logos/usd-coin-usdc-logo.png',
+            },
+          },
+        });
+
+        log('✅ USDC token added to MetaMask! Check your assets.', 'success');
+      } catch (error) {
+        log(`❌ Failed to add token: ${error.message}`, 'error');
+      }
+    });
+
+    document.getElementById('fileInput').addEventListener('change', (e) => {
+      selectedFile = e.target.files[0];
+      if (selectedFile) {
+        log(`File selected: ${selectedFile.name} (${selectedFile.size} bytes)`, 'info');
+        document.getElementById('fileInfo').innerHTML = `
+          <p>📄 ${selectedFile.name}</p>
+          <p>📊 Size: ${(selectedFile.size / 1024).toFixed(2)} KB</p>
+        `;
+        if (signer) {
+          document.getElementById('uploadBtn').disabled = false;
+        }
+      }
+    });
+
+    // Add tag row button
+    document.getElementById('addTagBtn').addEventListener('click', () => {
+      const container = document.getElementById('tagsContainer');
+      const newRow = document.createElement('div');
+      newRow.className = 'tag-row';
+      newRow.style.marginTop = '10px';
+      newRow.innerHTML = `
+        <input type="text" placeholder="Tag name" class="tag-name" style="width: 200px;">
+        <input type="text" placeholder="Tag value" class="tag-value" style="width: 300px;">
+        <button onclick="this.parentElement.remove()" style="background: #dc3545; padding: 8px 12px; font-size: 14px;">Remove</button>
+      `;
+      container.appendChild(newRow);
+    });
+
+    // MetaMask signer for arbundles
+    class MetaMaskSigner {
+      constructor(ethersSigner, address) {
+        this.signer = ethersSigner;
+        this.address = address;
+        this.signatureType = 3; // Ethereum
+        this.signatureLength = 65;
+        this.ownerLength = 65;
+        this.publicKey = null;
+      }
+
+      async setPublicKey() {
+        if (!this.publicKey) {
+          // For Ethereum (signatureType 3), we need the full 65-byte uncompressed public key
+          // Derive it by signing a message and recovering the public key
+          const message = 'Derive public key for Arbundles';
+          const signature = await this.signer.signMessage(message);
+
+          // Recover the public key from the signature
+          const messageHash = ethers.hashMessage(message);
+          const recoveredPublicKey = ethers.SigningKey.recoverPublicKey(messageHash, signature);
+
+          // Keep the full hex including '0x04' prefix for 65 bytes total
+          // Format: 0x04 (1 byte) + X coordinate (32 bytes) + Y coordinate (32 bytes) = 65 bytes
+          const publicKeyHex = recoveredPublicKey.slice(2); // Remove '0x' but keep '04' prefix
+          const bytes = new Uint8Array(publicKeyHex.length / 2);
+          for (let i = 0; i < publicKeyHex.length; i += 2) {
+            bytes[i / 2] = parseInt(publicKeyHex.substr(i, 2), 16);
+          }
+          this.publicKey = bytes;
+
+          log(`Public key derived: ${this.publicKey.length} bytes`, 'info');
+        }
+      }
+
+      async sign(message) {
+        await this.setPublicKey();
+        const signature = await this.signer.signMessage(message);
+        // Convert to Uint8Array (browser-compatible)
+        return new Uint8Array(ethers.getBytes(signature));
+      }
+    }
+
+    document.getElementById('uploadBtn').addEventListener('click', async () => {
+      if (!selectedFile || !signer) {
+        log('Please connect wallet and select a file', 'error');
+        return;
+      }
+
+      document.getElementById('uploadBtn').disabled = true;
+
+      try {
+        const uploadUrl = document.getElementById('uploadUrl').value;
+        const paymentUrl = document.getElementById('paymentUrl').value;
+
+        // Step 1: Read file
+        log('Reading file...', 'info');
+        const fileBuffer = await selectedFile.arrayBuffer();
+        const fileData = new Uint8Array(fileBuffer);
+
+        // Step 2: Create and sign data item
+        log('Creating ANS-104 data item...', 'info');
+
+        const dataSigner = new MetaMaskSigner(signer, userAddress);
+        await dataSigner.setPublicKey();
+
+        // Collect all tags (standard + custom)
+        const tags = [
+          { name: 'Content-Type', value: selectedFile.type || 'application/octet-stream' },
+          { name: 'File-Name', value: selectedFile.name }
+        ];
+
+        // Add custom tags from the form
+        const tagRows = document.querySelectorAll('.tag-row');
+        let customTagCount = 0;
+        tagRows.forEach(row => {
+          const nameInput = row.querySelector('.tag-name');
+          const valueInput = row.querySelector('.tag-value');
+          if (nameInput && valueInput && nameInput.value.trim() && valueInput.value.trim()) {
+            tags.push({ name: nameInput.value.trim(), value: valueInput.value.trim() });
+            log(`Added tag: ${nameInput.value.trim()} = ${valueInput.value.trim()}`, 'info');
+            customTagCount++;
+          }
+        });
+        if (customTagCount > 0) {
+          log(`✅ Added ${customTagCount} custom tag(s)`, 'success');
+        }
+
+        // arbundles is loaded from script tag as window.arbundles
+        const dataItem = window.arbundles.createData(fileData, dataSigner, { tags });
+
+        log('Signing data item (you will need to approve in MetaMask)...', 'info');
+        await dataItem.sign(dataSigner);
+
+        const signedDataItem = dataItem.getRaw();
+        log(`✅ Data item signed! ID: ${await dataItem.id}`, 'success');
+
+        // Step 3: Get price quote
+        log('Getting price quote...', 'info');
+        const priceResponse = await fetch(
+          `${paymentUrl}/v1/x402/price/3/${userAddress}?bytes=${signedDataItem.length}`
+        );
+
+        if (priceResponse.status !== 402) {
+          throw new Error(`Expected 402, got ${priceResponse.status}`);
+        }
+
+        const priceData = await priceResponse.json();
+        log('✅ Price quote received', 'success');
+
+        // Step 4: Create payment authorization
+        const networkKey = document.getElementById('network').value;
+        const config = NETWORK_CONFIG[networkKey];
+        const requirements = priceData.accepts.find(a => a.network === networkKey);
+
+        if (!requirements) {
+          throw new Error(`Network ${networkKey} not available`);
+        }
+
+        const amount = ethers.formatUnits(requirements.maxAmountRequired, 6);
+        log(`💰 Payment required: ${amount} USDC`, 'warning');
+
+        const domain = {
+          name: 'USD Coin',
+          version: '2',
+          chainId: config.chainId,
+          verifyingContract: config.usdcAddress,
+        };
+
+        const validAfter = Math.floor(Date.now() / 1000) - 3600;
+
+        // Handle different timeout formats
+        let validBefore;
+        if (requirements.timeout && requirements.timeout.validBefore) {
+          validBefore = Math.floor(requirements.timeout.validBefore / 1000);
+        } else if (requirements.validBefore) {
+          validBefore = Math.floor(requirements.validBefore / 1000);
+        } else {
+          // Default to 1 hour from now
+          validBefore = Math.floor(Date.now() / 1000) + 3600;
+        }
+
+        const nonce = ethers.hexlify(ethers.randomBytes(32));
+
+        const authorization = {
+          from: userAddress,
+          to: requirements.payTo,
+          value: requirements.maxAmountRequired,
+          validAfter,
+          validBefore,
+          nonce,
+        };
+
+        const types = {
+          TransferWithAuthorization: [
+            { name: 'from', type: 'address' },
+            { name: 'to', type: 'address' },
+            { name: 'value', type: 'uint256' },
+            { name: 'validAfter', type: 'uint256' },
+            { name: 'validBefore', type: 'uint256' },
+            { name: 'nonce', type: 'bytes32' },
+          ],
+        };
+
+        log('Signing payment authorization (approve in MetaMask)...', 'warning');
+        const signature = await signer.signTypedData(domain, types, authorization);
+        log('✅ Payment authorized!', 'success');
+
+        const paymentPayload = {
+          x402Version: 1,
+          scheme: 'exact',  // x402 standard scheme name (EIP-3009 implementation)
+          network: networkKey,
+          payload: { signature, authorization },
+        };
+
+        const paymentHeader = btoa(JSON.stringify(paymentPayload));
+
+        // Step 5: Upload with payment
+        log('Uploading to bundler...', 'info');
+        const uploadResponse = await fetch(`${uploadUrl}/v1/tx`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'X-PAYMENT': paymentHeader,
+          },
+          body: signedDataItem,
+        });
+
+        if (!uploadResponse.ok) {
+          const errorText = await uploadResponse.text();
+          throw new Error(`Upload failed: ${uploadResponse.status} - ${errorText}`);
+        }
+
+        const result = await uploadResponse.json();
+        log('🎉 Upload successful!', 'success');
+        log(`📄 Data Item ID: ${result.id}`, 'success');
+        log(`🔗 View on Arweave: https://arweave.net/${result.id}`, 'success');
+        log(`👤 Owner: ${result.owner}`, 'info');
+        log(`💰 Payer: ${result.payer}`, 'info');
+
+        if (result.receipt) {
+          log(`⏱️ Timestamp: ${new Date(result.receipt.timestamp).toLocaleString()}`, 'info');
+          log(`💎 Cost: ${result.receipt.winc} Winston`, 'info');
+          log(`📊 Deadline Height: ${result.receipt.deadlineHeight}`, 'info');
+        }
+
+        // Read x402 payment info from response body
+        if (result.x402Payment) {
+          log(`💳 Payment TX: ${result.x402Payment.transactionHash}`, 'success');
+          log(`🌐 Network: ${result.x402Payment.network}`, 'info');
+          log(`🔄 Mode: ${result.x402Payment.mode}`, 'info');
+          log(`🆔 Payment ID: ${result.x402Payment.paymentId}`, 'info');
+        }
+
+      } catch (error) {
+        log(`❌ Upload failed: ${error.message}`, 'error');
+        console.error(error);
+      } finally {
+        document.getElementById('uploadBtn').disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

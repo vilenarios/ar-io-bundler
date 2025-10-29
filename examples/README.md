@@ -2,6 +2,21 @@
 
 This directory contains production-ready examples for uploading files to AR.IO Bundler using Coinbase's **x402 payment protocol** with USDC stablecoins.
 
+## ⚠️ **CRITICAL: Must Use HTTP Server for Browser Examples**
+
+**MetaMask WILL NOT work when opening HTML files directly via `file://` protocol!**
+
+### Quick Start:
+
+```bash
+cd examples
+node serve.js
+```
+
+Then open: **http://localhost:8080/**
+
+**Why?** For security reasons, MetaMask only injects `window.ethereum` on pages served via HTTP/HTTPS, not local `file://` URLs.
+
 ## Overview
 
 The x402 protocol enables HTTP-native, pay-as-you-go payments using USDC on EVM chains (Base, Ethereum, Polygon). Upload files to Arweave without pre-loading credits—just pay with USDC as you upload.
@@ -54,30 +69,38 @@ open "http://localhost:4001/v1/x402/price/3/YOUR_ADDRESS?bytes=1024"
 
 We provide **3 production-ready examples**:
 
-### 1. 🚀 Browser Example with x402-fetch: `x402-upload-with-fetch-sdk.html` ⭐ EASIEST
+### 1. 🚀 Simplest Example: `x402-raw-upload.html` ⭐ START HERE
 
-**Fully automated x402 payment handling using the official x402-fetch library.**
+**Upload raw files with automatic x402 payment using the official x402-fetch library.**
 
 #### Why This Example?
 
-- ✅ **Fully automated** - Library handles all payment logic automatically
-- ✅ **Minimal code** - Just wrap fetch and use it normally
-- ✅ **x402 standard compliant** - Works with any x402-compatible service
-- ✅ **Production-ready** - Official Coinbase library
-- ✅ **No manual payment handling** - Automatically detects 402, creates payment, retries
+- ✅ **Simplest approach** - No data item signing, no arbundles, just upload
+- ✅ **Official x402-fetch library** - Automatic 402 payment detection and handling
+- ✅ **Production-ready** - Uses Coinbase's official x402 implementation
+- ✅ **Perfect for getting started** - Minimal code, maximum clarity
+- ✅ **No build step** - Just open the HTML file via HTTP server
 
 #### Quick Start
 
 ```bash
-# Just open it in a browser
-open examples/x402-upload-with-fetch-sdk.html
+# Start the HTTP server (required for MetaMask)
+cd examples
+node serve.js
 
-# Or serve locally
-python3 -m http.server 8080
-# Visit http://localhost:8080/x402-upload-with-fetch-sdk.html
+# Open in browser
+http://localhost:8080/x402-raw-upload.html
 ```
 
-#### How It Works
+#### Usage Flow
+
+1. Connect MetaMask wallet
+2. Select a file to upload
+3. Click "Upload with x402 Payment"
+4. x402-fetch automatically detects 402, prompts for payment signature
+5. Upload completes with receipt
+
+#### Code Example
 
 ```javascript
 import { wrapFetchWithPayment } from 'x402-fetch';
@@ -86,6 +109,7 @@ import { baseSepolia } from 'viem/chains';
 
 // Create viem wallet client from MetaMask
 const walletClient = createWalletClient({
+  account,
   chain: baseSepolia,
   transport: custom(window.ethereum)
 });
@@ -93,40 +117,40 @@ const walletClient = createWalletClient({
 // Wrap fetch with automatic x402 handling
 const fetchWithPayment = wrapFetchWithPayment(fetch, walletClient);
 
-// Just use it like regular fetch - payments handled automatically!
-const response = await fetchWithPayment('http://localhost:3001/v1/tx', {
+// Upload raw file - payment handled automatically!
+const fileData = await file.arrayBuffer();
+const response = await fetchWithPayment('https://upload.services.vilenarios.com/v1/tx', {
   method: 'POST',
-  body: signedDataItem
+  headers: {
+    'Content-Type': file.type,
+    'Content-Length': fileData.byteLength.toString(),
+  },
+  body: fileData
 });
 
-// Library automatically:
-// 1. Detected 402 Payment Required
-// 2. Parsed payment requirements
-// 3. Created and signed EIP-3009 payment
-// 4. Retried request with X-PAYMENT header
-// 5. Returned successful response
+const receipt = await response.json();
+console.log('Uploaded:', receipt.id);
 ```
 
 #### Libraries Used
 
-- **viem** - Ethereum wallet client (required by x402-fetch)
-- **x402-fetch** - Official x402 SDK for automatic payment handling
-- **@dha-team/arbundles** - ANS-104 data item creation and signing
+- **viem@2.x** - Ethereum wallet client
+- **x402-fetch@latest** - Official Coinbase x402 SDK for automatic payment handling
 
 ---
 
-### 2. 🌐 Browser Example (Manual): `x402-upload-corrected.html` ⭐ RECOMMENDED
+### 2. 🌐 Advanced Example: `x402-upload-signed-data-item.html` ⭐ RECOMMENDED
 
-**Complete browser-based implementation with manual x402 protocol.**
+**Complete browser-based x402 upload with signed ANS-104 data items.**
 
 #### Why This Example?
 
 - ✅ **Production-ready** - Tested and verified implementation
-- ✅ **Manual x402 protocol** - No external x402 library dependencies, full control
-- ✅ **Single wallet** - Uses one Ethereum wallet for both data signing and payment
+- ✅ **Single MetaMask wallet** - Uses one Ethereum wallet for both data signing and payment
 - ✅ **Comprehensive** - Complete ANS-104 data item signing with arbundles
 - ✅ **Well-documented** - Inline comments explain every step
-- ✅ **No build step** - Just open the HTML file
+- ✅ **No build step** - Just open the HTML file via HTTP server
+- ✅ **Clean x402 flow** - Gets price quote first, then uploads with payment
 
 #### Key Features
 
@@ -136,26 +160,22 @@ const response = await fetchWithPayment('http://localhost:3001/v1/tx', {
 
 **Both use the same MetaMask wallet!** No Arweave wallet needed.
 
-**Two Signing Modes:**
-- **Private Key Mode** (testing) - Direct Ethereum private key for quick testing
-- **MetaMask Adapter** (production) - Secure browser wallet integration
-
 #### Quick Start
 
 ```bash
-# Just open it in a browser
-open examples/x402-upload-corrected.html
+# Start the HTTP server (required for MetaMask)
+cd examples
+node serve.js
 
-# Or serve locally
-python3 -m http.server 8080
-# Visit http://localhost:8080/x402-upload-corrected.html
+# Open in browser
+http://localhost:8080/x402-upload-signed-data-item.html
 ```
 
 #### Usage Flow
 
-1. Connect MetaMask or enter private key
+1. Connect MetaMask wallet
 2. Select a file to upload
-3. Click "Upload with x402 Payment"
+3. Click "Upload with USDC Payment"
 4. Sign data item (MetaMask prompt #1)
 5. Sign USDC payment (MetaMask prompt #2)
 6. Upload completes with receipt
@@ -205,8 +225,7 @@ console.log('Payment:', receipt.x402Payment);
 #### Libraries Used
 
 - **ethers.js v6** - Ethereum wallet and EIP-712 signing
-- **@dha-team/arbundles** - ANS-104 data item creation and signing
-- **Manual x402** - No external x402 library (full protocol control)
+- **@dha-team/arbundles@1.0.4** - ANS-104 data item creation and signing
 
 ---
 
