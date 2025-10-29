@@ -45,8 +45,25 @@ export function isANS104DataItem(buffer: Buffer): boolean {
 }
 
 /**
+ * Convert kebab-case to proper case for tag names
+ * Examples:
+ *   "will" -> "Will"
+ *   "app-name" -> "App-Name"
+ *   "user-id" -> "User-Id"
+ */
+function kebabCaseToProperCase(str: string): string {
+  return str
+    .split('-')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join('-');
+}
+
+/**
  * Extract tags from HTTP headers with X-Tag-* prefix
  * Example: X-Tag-App-Name: MyApp -> { name: "App-Name", value: "MyApp" }
+ *
+ * Note: HTTP headers are case-insensitive and often normalized to lowercase.
+ * We convert the tag name from kebab-case to proper case (e.g., "will" -> "Will")
  */
 export function extractTagsFromHeaders(headers: Record<string, string | string[] | undefined>): Tag[] {
   const tags: Tag[] = [];
@@ -55,7 +72,8 @@ export function extractTagsFromHeaders(headers: Record<string, string | string[]
     const lowerKey = key.toLowerCase();
 
     if (lowerKey.startsWith("x-tag-")) {
-      const tagName = key.substring(6); // Remove 'x-tag-' prefix
+      const rawTagName = key.substring(6); // Remove 'x-tag-' prefix
+      const tagName = kebabCaseToProperCase(rawTagName); // Convert to proper case
       const tagValue = Array.isArray(value) ? value[0] : value;
 
       if (tagValue) {
