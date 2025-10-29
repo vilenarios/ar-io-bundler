@@ -75,12 +75,13 @@
 
     <div class="info">
       <strong>✨ Simplest x402 Upload</strong>
-      <p>Upload raw files directly to Arweave with automatic USDC payment.</p>
+      <p>Upload raw files directly to Arweave with USDC payment.</p>
       <p><strong>No data item signing required!</strong> Just select a file and upload.</p>
       <ul>
-        <li>Automatic 402 payment detection and retry</li>
-        <li>Direct raw file upload (no ANS-104 wrapping)</li>
-        <li>One MetaMask signature for USDC payment</li>
+        <li>Upload to server → Get 402 Payment Required with exact price</li>
+        <li>Sign USDC payment authorization in MetaMask</li>
+        <li>Retry upload with payment → Server accepts and creates data item</li>
+        <li>Direct raw file upload (no ANS-104 wrapping needed)</li>
       </ul>
     </div>
 
@@ -368,9 +369,8 @@
           log(`✅ ${customTagCount} custom tag(s) will be included`, 'success');
         }
 
-        // Step 2: Try upload first (will get 402)
-        log('Attempting upload (expecting 402)...', 'info');
-
+        // Step 2: Try upload first to get 402 quote from UPLOAD service
+        log('Attempting upload (expecting 402 Payment Required)...', 'info');
         let uploadResponse = await fetch(`${uploadUrl}/v1/tx`, {
           method: 'POST',
           headers: {
@@ -381,93 +381,92 @@
           body: fileData
         });
 
-        // Step 3: If 402, get payment requirements and create payment
-        if (uploadResponse.status === 402) {
-          log('💳 402 Payment Required - creating payment...', 'info');
-
-          const paymentReq = await uploadResponse.json();
-          log(`Payment response: ${JSON.stringify(paymentReq, null, 2)}`, 'info');
-
-          const networkKey = document.getElementById('network').value;
-          const config = NETWORK_CONFIG[networkKey];
-
-          const requirements = paymentReq.accepts.find(a => a.network === networkKey);
-          if (!requirements) {
-            throw new Error(`Network ${networkKey} not available`);
-          }
-
-          const amount = ethers.formatUnits(requirements.maxAmountRequired, 6);
-          log(`💰 Payment required: ${amount} USDC`, 'warning');
-
-          // Create EIP-712 payment authorization
-          const validAfter = Math.floor(Date.now() / 1000) - 3600;
-
-          // Handle different timeout formats
-          let validBefore;
-          if (requirements.timeout && requirements.timeout.validBefore) {
-            validBefore = Math.floor(requirements.timeout.validBefore / 1000);
-          } else if (requirements.validBefore) {
-            validBefore = Math.floor(requirements.validBefore / 1000);
-          } else {
-            // Default to 1 hour from now
-            validBefore = Math.floor(Date.now() / 1000) + 3600;
-          }
-
-          const nonce = ethers.hexlify(ethers.randomBytes(32));
-
-          const authorization = {
-            from: userAddress,
-            to: requirements.payTo,
-            value: requirements.maxAmountRequired,
-            validAfter,
-            validBefore,
-            nonce,
-          };
-
-          const domain = {
-            name: 'USD Coin',
-            version: '2',
-            chainId: config.chainId,
-            verifyingContract: config.usdcAddress,
-          };
-
-          const types = {
-            TransferWithAuthorization: [
-              { name: 'from', type: 'address' },
-              { name: 'to', type: 'address' },
-              { name: 'value', type: 'uint256' },
-              { name: 'validAfter', type: 'uint256' },
-              { name: 'validBefore', type: 'uint256' },
-              { name: 'nonce', type: 'bytes32' },
-            ],
-          };
-
-          log('Signing payment authorization (approve in MetaMask)...', 'warning');
-          const signature = await signer.signTypedData(domain, types, authorization);
-          log('✅ Payment authorized!', 'success');
-
-          const paymentPayload = {
-            x402Version: 1,
-            scheme: 'exact',  // x402 standard scheme name (EIP-3009 implementation)
-            network: networkKey,
-            payload: { signature, authorization },
-          };
-
-          const paymentHeader = btoa(JSON.stringify(paymentPayload));
-
-          // Step 4: Retry upload with payment
-          log('Retrying upload with payment...', 'info');
-          uploadResponse = await fetch(`${uploadUrl}/v1/tx`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': selectedFile.type || 'application/octet-stream',
-              'Content-Length': fileData.length.toString(),
-              'X-PAYMENT': paymentHeader,
-              ...customHeaders,
-            },
-            body: fileData
-          });
+        if (uploadResponse.status !== 402) {
+          throw new Error(`Expected 402 Payment Required, got ${uploadResponse.status}`);
         }
+
+        const priceData = await uploadResponse.json();
+        log('✅ 402 Payment Required - received price quote from upload service', 'success');
+        log(`Quote details: ${JSON.stringify(priceData, null, 2)}`, 'info');
+
+        // Step 3: Create payment authorization from upload service's quote
+        const networkKey = document.getElementById('network').value;
+        const config = NETWORK_CONFIG[networkKey];
+
+        const requirements = priceData.accepts.find(a => a.network === networkKey);
+        if (!requirements) {
+          throw new Error(`Network ${networkKey} not available`);
+        }
+
+        // Use the EXACT amount from the 402 response - no buffer needed
+        const amount = ethers.formatUnits(requirements.maxAmountRequired, 6);
+        log(`💰 Payment required: ${amount} USDC`, 'warning');
+
+        // Create EIP-712 payment authorization with proper timestamps
+        const currentTime = Math.floor(Date.now() / 1000);
+        const validAfter = currentTime - 3600; // 1 hour ago for clock skew tolerance
+
+        // Use the server's maxTimeoutSeconds + buffer for network/processing delays
+        const timeoutSeconds = requirements.maxTimeoutSeconds || 3600;
+        const bufferSeconds = 120; // 2 minute buffer for network delays and processing
+        const validBefore = currentTime + timeoutSeconds + bufferSeconds;
+
+        log(`Payment window: ${validAfter} to ${validBefore} (timeout: ${timeoutSeconds}s + buffer: ${bufferSeconds}s)`, 'info');
+
+        const nonce = ethers.hexlify(ethers.randomBytes(32));
+
+        const authorization = {
+          from: userAddress,
+          to: requirements.payTo,
+          value: requirements.maxAmountRequired,
+          validAfter,
+          validBefore,
+          nonce,
+        };
+
+        const domain = {
+          name: 'USD Coin',
+          version: '2',
+          chainId: config.chainId,
+          verifyingContract: config.usdcAddress,
+        };
+
+        const types = {
+          TransferWithAuthorization: [
+            { name: 'from', type: 'address' },
+            { name: 'to', type: 'address' },
+            { name: 'value', type: 'uint256' },
+            { name: 'validAfter', type: 'uint256' },
+            { name: 'validBefore', type: 'uint256' },
+            { name: 'nonce', type: 'bytes32' },
+          ],
+        };
+
+        log('Signing payment authorization (approve in MetaMask)...', 'warning');
+        const signature = await signer.signTypedData(domain, types, authorization);
+        log('✅ Payment authorized!', 'success');
+
+        const paymentPayload = {
+          x402Version: 1,
+          scheme: 'exact',  // x402 standard scheme name (EIP-3009 implementation)
+          network: networkKey,
+          payload: { signature, authorization },
+        };
+
+        const paymentHeader = btoa(JSON.stringify(paymentPayload));
+
+        // Step 4: Retry upload with payment
+        log('Retrying upload with payment...', 'info');
+        uploadResponse = await fetch(`${uploadUrl}/v1/tx`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': selectedFile.type || 'application/octet-stream',
+            'Content-Length': fileData.length.toString(),
+            'X-PAYMENT': paymentHeader,
+            ...customHeaders,
+          },
+          body: fileData
+        });
 
         if (!uploadResponse.ok) {
           const errorText = await uploadResponse.text();
