@@ -30,8 +30,24 @@ const injectedAllowListAddresses = process.env.ALLOW_LISTED_ADDRESSES
   ? process.env.ALLOW_LISTED_ADDRESSES.split(",")
   : [];
 
+// Compute raw data item wallet address if configured (computed later to avoid circular dependencies)
+let rawDataItemWalletAddress: PublicArweaveAddress | undefined;
+
 export const allowListPublicAddresses: PublicArweaveAddress[] =
   injectedAllowListAddresses;
+
+// Function to get the raw data item wallet address (computed lazily)
+export function getRawDataItemWalletAddress(): PublicArweaveAddress | undefined {
+  return rawDataItemWalletAddress;
+}
+
+// Function to set the raw data item wallet address and add to allowlist
+export function setRawDataItemWalletAddress(address: PublicArweaveAddress): void {
+  rawDataItemWalletAddress = address;
+  if (!allowListPublicAddresses.includes(address)) {
+    allowListPublicAddresses.push(address);
+  }
+}
 
 export const migrateOnStartup = process.env.MIGRATE_ON_STARTUP === "true";
 
@@ -268,6 +284,12 @@ export const blocklistedAddresses =
 // allows providing a local JWK for testing purposes
 export const turboLocalJwk = process.env.TURBO_JWK_FILE
   ? JSON.parse(fs.readFileSync(process.env.TURBO_JWK_FILE, "utf-8"))
+  : undefined;
+
+// Raw data item wallet - used to sign data items for raw uploads (x402 flow)
+// This wallet should be separate from the bundler wallet and should be whitelisted
+export const rawDataItemJwk = process.env.RAW_DATA_ITEM_JWK_FILE
+  ? JSON.parse(fs.readFileSync(process.env.RAW_DATA_ITEM_JWK_FILE, "utf-8"))
   : undefined;
 
 export const allowListedSignatureTypes = process.env

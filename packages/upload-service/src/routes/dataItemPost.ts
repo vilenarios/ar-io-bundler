@@ -23,6 +23,8 @@ import {
   ReserveBalanceResponse,
 } from "../arch/payment";
 import { enqueue } from "../arch/queues";
+import { isANS104DataItem } from "../utils/rawDataUtils";
+import { handleRawDataUpload } from "./rawDataPost";
 import {
   DataItemInterface,
   InMemoryDataItem,
@@ -110,6 +112,47 @@ export const inMemoryDataItemThreshold = 10 * 1024; // 10 KiB
 
 export async function dataItemRoute(ctx: KoaContext, next: Next) {
   let { logger } = ctx.state;
+
+  // Smart detection: Check if this is raw data or a signed ANS-104 data item
+  // For raw data uploads (enabled via feature flag), we handle differently
+  const rawDataUploadsEnabled = process.env.RAW_DATA_UPLOADS_ENABLED === "true";
+
+  if (rawDataUploadsEnabled) {
+    // Peek at request to determine if it's ANS-104 or raw data
+    // Strategy: Check for X-Tag-* headers or non-octet-stream Content-Type
+    const contentType = ctx.req.headers?.["content-type"];
+    const hasCustomTags = Object.keys(ctx.req.headers).some((key) =>
+      key.toLowerCase().startsWith("x-tag-")
+    );
+
+    // If it has custom tags or is JSON, it's likely raw data upload
+    // If Content-Type is not application/octet-stream, it's likely raw data
+    const likelyRawData = hasCustomTags ||
+      (contentType && contentType !== octetStreamContentType && contentType !== "application/octet-stream");
+
+    if (likelyRawData) {
+      logger.info("Detected raw data upload request (non-ANS104)");
+      // Buffer the entire body for raw data handling
+      const chunks: Buffer[] = [];
+      for await (const chunk of ctx.req) {
+        chunks.push(chunk);
+      }
+      const rawBody = Buffer.concat(chunks);
+
+      // Verify it's not actually ANS-104
+      if (!isANS104DataItem(rawBody)) {
+        return handleRawDataUpload(ctx, rawBody);
+      }
+
+      // False positive - it's actually ANS-104, continue with normal flow
+      logger.info("False positive on raw data detection, proceeding as ANS-104");
+      // Need to recreate the stream since we consumed it
+      // For now, create a readable stream from the buffer
+      const { Readable } = await import("stream");
+      ctx.request.req = Readable.from(rawBody) as any;
+    }
+  }
+
   const durations = {
     totalDuration: 0,
     cacheDuration: 0,
@@ -150,11 +193,13 @@ export async function dataItemRoute(ctx: KoaContext, next: Next) {
   if (!requestContentType) {
     logger.debug("Missing request content type!");
   } else if (requestContentType !== octetStreamContentType) {
-    errorResponse(ctx, {
-      errorMessage: "Invalid Content Type",
-    });
-
-    return next();
+    // Allow non-octet-stream for raw data uploads (already handled above)
+    if (!rawDataUploadsEnabled) {
+      errorResponse(ctx, {
+        errorMessage: "Invalid Content Type",
+      });
+      return next();
+    }
   }
 
   const paidBys: string[] = [];

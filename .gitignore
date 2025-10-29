@@ -46,6 +46,7 @@ tmp/
 *.tmp
 
 # Secrets
+rawWallet.json
 wallet.json
 *.jwk
 *.pem

@@ -17,9 +17,10 @@
 import { ArweaveSigner } from "@dha-team/arbundles";
 import { Base64UrlString } from "arweave/node/lib/utils";
 
-import { turboLocalJwk } from "../constants";
+import { rawDataItemJwk, setRawDataItemWalletAddress, turboLocalJwk } from "../constants";
 import logger from "../logger";
 import { JWKInterface } from "../types/jwkTypes";
+import { jwkToPublicArweaveAddress } from "./base64";
 
 // AWS Secrets Manager integration removed - using local wallet.json only
 
@@ -29,6 +30,21 @@ export async function getArweaveWallet(): Promise<JWKInterface> {
   }
   logger.debug("Using local JWK for Turbo wallet");
   return turboLocalJwk;
+}
+
+export async function getRawDataItemWallet(): Promise<JWKInterface> {
+  if (!rawDataItemJwk) {
+    throw new Error(
+      "Raw data item wallet not configured. Please set RAW_DATA_ITEM_JWK_FILE in .env"
+    );
+  }
+
+  // Automatically add this wallet to the allowlist (one-time initialization)
+  const address = jwkToPublicArweaveAddress(rawDataItemJwk);
+  setRawDataItemWalletAddress(address);
+
+  logger.debug("Using local JWK for raw data item wallet", { address });
+  return rawDataItemJwk;
 }
 
 export async function getOpticalWallet(): Promise<JWKInterface> {
