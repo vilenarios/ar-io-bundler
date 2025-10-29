@@ -27,10 +27,10 @@ The x402 protocol provides **HTTP-native USDC payment** for data uploads without
 │                    UPLOAD SERVICE (Port 3001)                      │
 │                  src/routes/dataItemPost.ts                        │
 │                                                                    │
-│  Detects X-PAYMENT header (line 174-177)                          │
+│  Detects X-PAYMENT header in rawHeaders                           │
 │                                                                    │
 │  ┌─────────────────────────────────────────────────────────┐     │
-│  │ IF X-PAYMENT header present (line 286-330):            │     │
+│  │ IF X-PAYMENT header present:                            │     │
 │  │                                                          │     │
 │  │  1. Extract payment header from request                 │     │
 │  │  2. Call payment service to verify & settle:            │     │
@@ -49,7 +49,7 @@ The x402 protocol provides **HTTP-native USDC payment** for data uploads without
 │  └─────────────────────────────────────────────────────────┘     │
 │                                                                    │
 │  ┌─────────────────────────────────────────────────────────┐     │
-│  │ ELSE no X-PAYMENT header (line 330-399):               │     │
+│  │ ELSE no X-PAYMENT header:                               │     │
 │  │                                                          │     │
 │  │  1. Check if user has traditional balance:             │     │
 │  │     paymentService.checkBalanceForData(...)             │     │
@@ -71,7 +71,7 @@ The x402 protocol provides **HTTP-native USDC payment** for data uploads without
 │  │     - payTo address                                     │     │
 │  └─────────────────────────────────────────────────────────┘     │
 │                                                                    │
-│  After upload completes (line 526-571):                           │
+│  After upload completes:                                           │
 │  ┌─────────────────────────────────────────────────────────┐     │
 │  │  IF x402 payment was used:                              │     │
 │  │    paymentService.finalizeX402Payment({                 │     │
@@ -84,7 +84,7 @@ The x402 protocol provides **HTTP-native USDC payment** for data uploads without
 │  │  - Refund if overpaid                                   │     │
 │  └─────────────────────────────────────────────────────────┘     │
 │                                                                    │
-│  Return response with x402Payment details (line 961-986)          │
+│  Return response with x402Payment details                          │
 │  Body: { ...receipt, x402Payment: { paymentId, txHash, ... } }    │
 │  Header: X-Payment-Response: <base64-payment-details>             │
 └────────────────────────────┬──────────────────────────────────────┘
@@ -587,14 +587,14 @@ CLIENT RECEIVES:
 **Three x402-specific methods**:
 
 ```typescript
-// Called when user has no balance (line 555-603)
+// Called when user has no balance
 async getX402PriceQuote({
   byteCount,
   nativeAddress,
   signatureType
 }): Promise<X402PaymentRequiredResponse | null>
 
-// Called when X-PAYMENT header detected (line 604-692)
+// Called when X-PAYMENT header detected
 async verifyAndSettleX402Payment({
   paymentHeader,
   dataItemId,
@@ -604,7 +604,7 @@ async verifyAndSettleX402Payment({
   mode
 }): Promise<X402PaymentResult>
 
-// Called after upload completes (line 693-747)
+// Called after upload completes
 async finalizeX402Payment({
   dataItemId,
   actualByteCount
@@ -622,20 +622,20 @@ async finalizeX402Payment({
 **Key Methods**:
 
 ```typescript
-// Verify EIP-712 signature locally (line 119-202)
+// Verify EIP-712 signature locally
 async verifyPayment(
   paymentHeader: string,
   requirements: X402PaymentRequirements
 ): Promise<X402VerificationResult>
 
-// Settle via Coinbase facilitator (line 207-283)
+// Settle via Coinbase facilitator
 async settlePayment(
   paymentHeader: string,
   requirements: X402PaymentRequirements
 ): Promise<X402SettlementResult>
 ```
 
-**CDP Authentication** (line 261-271):
+**CDP Authentication**:
 ```typescript
 const headers: Record<string, string> = {
   "Content-Type": "application/json",
@@ -947,7 +947,7 @@ GROUP BY network;
 **A**: Per x402 standard, the **price quote endpoint** returns 200 OK with payment requirements. The **actual 402 response** happens at the upload endpoint when payment is required.
 
 ### Q: What happens if user has both balance AND sends X-PAYMENT header?
-**A**: X-PAYMENT takes priority. The upload service checks for X-PAYMENT header first (line 286), and if present, uses x402 flow regardless of traditional balance.
+**A**: X-PAYMENT takes priority. The upload service checks for X-PAYMENT header first, and if present, uses x402 flow regardless of traditional balance.
 
 ### Q: Can users mix x402 and traditional payments?
 **A**: Yes! In hybrid mode, excess x402 payment is credited to traditional balance. User can then use that balance for future uploads without x402.
