@@ -94,6 +94,52 @@ export async function createServer(
   // CORS handled by nginx reverse proxy
   // app.use(cors({ allowMethods: ["GET", "POST"] }));
 
+  // Middleware to fix Content-Type mismatch from turbo-sdk
+  // SDK sometimes sends JSON body with form-urlencoded Content-Type
+  // This must run BEFORE bodyParser
+  app.use(async (ctx, next) => {
+    const contentType = ctx.request.header['content-type'] || '';
+
+    // Only intercept form-urlencoded requests
+    if (contentType.includes('application/x-www-form-urlencoded') && ctx.method === 'POST') {
+      try {
+        const getRawBody = (await import('raw-body')).default;
+        const rawBody = await getRawBody(ctx.req, {
+          length: ctx.request.length,
+          limit: '10mb',
+          encoding: 'utf8',
+        });
+
+        // Check if body looks like JSON
+        const trimmed = rawBody.trim();
+        if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+          // Parse as JSON manually and set it on ctx.request
+          try {
+            (ctx.request as any).body = JSON.parse(trimmed);
+            logger.debug('Fixed Content-Type mismatch: parsed JSON from form-urlencoded', {
+              bodyPreview: trimmed.substring(0, 100)
+            });
+            // Skip bodyParser by setting body
+            return await next();
+          } catch (e) {
+            // Not valid JSON, let bodyParser handle it
+            logger.warn('Body looks like JSON but failed to parse', { error: e });
+          }
+        }
+
+        // Not JSON, parse as form data using qs
+        const qs = await import('qs');
+        (ctx.request as any).body = qs.default.parse(trimmed);
+        return await next();
+      } catch (error) {
+        logger.error('Error in Content-Type fix middleware', { error });
+        // Fall through to bodyParser
+      }
+    }
+
+    await next();
+  });
+
   // Support both JSON and form-urlencoded request bodies
   app.use(bodyParser({
     enableTypes: ['json', 'form', 'text'],
