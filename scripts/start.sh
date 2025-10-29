@@ -36,9 +36,13 @@ if ! docker ps | grep -q ar-io-bundler-postgres; then
   echo "   Initializing MinIO buckets..."
   docker compose up minio-init
 
-  # Run database migrations
+  # Run database migrations (using yarn instead of Docker)
   echo "   Running database migrations..."
-  docker compose up payment-migrator upload-migrator
+  cd "$PROJECT_ROOT/packages/payment-service"
+  DB_HOST=localhost DB_USER=turbo_admin DB_PASSWORD=postgres DB_DATABASE=payment_service yarn db:migrate:latest
+  cd "$PROJECT_ROOT/packages/upload-service"
+  DB_HOST=localhost DB_USER=turbo_admin DB_PASSWORD=postgres DB_DATABASE=upload_service yarn db:migrate:latest
+  cd "$PROJECT_ROOT"
 
   echo -e "${GREEN}✓${NC} Infrastructure started"
 else

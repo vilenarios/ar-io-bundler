@@ -29,5 +29,6 @@ export async function architectureMiddleware(
   ctx.state.stripe = arch.stripe;
   ctx.state.emailProvider = arch.emailProvider;
   ctx.state.gatewayMap = arch.gatewayMap;
+  ctx.state.x402Service = arch.x402Service;
   return next();
 }

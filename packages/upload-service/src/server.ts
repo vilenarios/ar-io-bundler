@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-import cors from "@koa/cors";
+// import cors from "@koa/cors"; // CORS handled by nginx
 import Koa, { DefaultState, Next, ParameterizedContext } from "koa";
 
 import { Architecture, defaultArchitecture } from "./arch/architecture";
@@ -81,7 +81,8 @@ export async function createServer(
   app.use(loggerMiddleware);
   // attaches listeners related to request streams for debugging
   app.use(requestMiddleware);
-  app.use(cors({ credentials: true }));
+  // CORS handled by nginx reverse proxy
+  // app.use(cors({ credentials: true }));
   // attach our primary architecture
   app.use((ctx: KoaContext, next: Next) =>
     architectureMiddleware(ctx, next, {

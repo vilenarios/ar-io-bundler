@@ -202,6 +202,7 @@ __metadata:
     "@types/jwk-to-pem": ^2.0.1
     "@types/knex": ^0.16.1
     "@types/koa": ^2.13.4
+    "@types/koa-bodyparser": ^4.3.13
     "@types/koa-router": ^7.4.4
     "@types/koa__cors": ^3.3.0
     "@types/mandrill-api": ^1.0.33
@@ -229,6 +230,7 @@ __metadata:
     jsonwebtoken: ^9.0.0
     knex: ^2.5.1
     koa: 3.0.0-alpha.3
+    koa-bodyparser: ^4.4.1
     koa-jwt: ^4.0.4
     koa-router: ^13.0.1
     koa2-swagger-ui: ^5.8.0
@@ -6139,6 +6141,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/koa-bodyparser@npm:^4.3.13":
+  version: 4.3.13
+  resolution: "@types/koa-bodyparser@npm:4.3.13"
+  dependencies:
+    "@types/koa": "*"
+  checksum: 684856d19fd35033f61eb2d99bb94f378cb4f397ddd1a2c4c852105fb5957f0b23be6e2307acd754b3c105e98c88228caadef9785b4a077f014af16afe4bd657
+  languageName: node
+  linkType: hard
+
 "@types/koa-compose@npm:*, @types/koa-compose@npm:^3.2.5":
   version: 3.2.8
   resolution: "@types/koa-compose@npm:3.2.8"
@@ -11954,7 +11965,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"koa-bodyparser@npm:^4.3.0":
+"koa-bodyparser@npm:^4.3.0, koa-bodyparser@npm:^4.4.1":
   version: 4.4.1
   resolution: "koa-bodyparser@npm:4.4.1"
   dependencies:

@@ -307,7 +307,10 @@ export async function x402PaymentRoute(ctx: KoaContext, next: Next) {
       mode,
     };
   } catch (error) {
-    logger.error("X402 payment processing failed", { error });
+    logger.error("X402 payment processing failed", {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     ctx.status = 500;
     ctx.body = {
       error: "Payment processing failed",

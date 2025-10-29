@@ -14,8 +14,9 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-import cors from "@koa/cors";
+// import cors from "@koa/cors"; // CORS handled by nginx
 import Koa, { DefaultState, Next, ParameterizedContext } from "koa";
+import bodyParser from "koa-bodyparser";
 import jwt from "koa-jwt";
 import Stripe from "stripe";
 import { Logger } from "winston";
@@ -90,7 +91,9 @@ export async function createServer(
 
   app.use(loggerMiddleware);
 
-  app.use(cors({ allowMethods: ["GET", "POST"] }));
+  // CORS handled by nginx reverse proxy
+  // app.use(cors({ allowMethods: ["GET", "POST"] }));
+  app.use(bodyParser());
   // NOTE: Middleware that use the JWT must handle ctx.state.user being undefined and throw
   // an error if the user is not authenticated
   app.use(jwt({ secret: sharedSecret, passthrough: true }));

@@ -95,7 +95,10 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
       payerAddress,
     });
   } catch (error) {
-    logger.error("Failed to create data item", { error });
+    logger.error("Failed to create data item", {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     return errorResponse(ctx, {
       errorMessage: "Failed to create data item from raw data",
       status: 500,
