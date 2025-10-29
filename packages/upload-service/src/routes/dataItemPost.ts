@@ -342,7 +342,7 @@ export async function dataItemRoute(ctx: KoaContext, next: Next) {
         byteCount: rawContentLength,
         nativeAddress,
         signatureType,
-        mode: "hybrid", // Default to hybrid mode
+        mode: "payg", // Force PAYG mode - x402 is stateless, no credit assignment
       });
 
       if (x402Result.success) {

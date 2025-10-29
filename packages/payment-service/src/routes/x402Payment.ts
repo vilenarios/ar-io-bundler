@@ -61,9 +61,17 @@ export async function x402PaymentRoute(ctx: KoaContext, next: Next) {
       : defaultX402PaymentMode;
 
   // Validate mode-specific requirements
-  if ((mode === "payg" || mode === "hybrid") && (!dataItemId || !byteCountParam)) {
+  // Note: dataItemId is optional for PAYG (will be linked after data item creation)
+  if ((mode === "payg" || mode === "hybrid") && !byteCountParam) {
     throw new X402PaymentError(
-      "dataItemId and byteCount are required for PAYG and hybrid modes"
+      "byteCount is required for PAYG and hybrid modes"
+    );
+  }
+
+  // Hybrid mode still requires dataItemId upfront (for existing flow compatibility)
+  if (mode === "hybrid" && !dataItemId) {
+    throw new X402PaymentError(
+      "dataItemId is required for hybrid mode"
     );
   }
 
@@ -231,17 +239,26 @@ export async function x402PaymentRoute(ctx: KoaContext, next: Next) {
       // Pay-as-you-go: Reserve winc for this specific data item
       wincReserved = winstonCost;
 
-      await paymentDatabase.createX402PaymentReservation({
-        dataItemId: dataItemId as DataItemId,
-        x402PaymentId: payment.id,
-        wincReserved,
-        expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(), // 1 hour
-      });
+      // Only create reservation if dataItemId exists
+      // For x402 raw uploads, reservation is created later via link endpoint
+      if (dataItemId) {
+        await paymentDatabase.createX402PaymentReservation({
+          dataItemId: dataItemId as DataItemId,
+          x402PaymentId: payment.id,
+          wincReserved,
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(), // 1 hour
+        });
 
-      logger.info("Created x402 PAYG reservation", {
-        dataItemId,
-        wincReserved,
-      });
+        logger.info("Created x402 PAYG reservation", {
+          dataItemId,
+          wincReserved,
+        });
+      } else {
+        logger.info("x402 PAYG payment settled - reservation will be created on link", {
+          paymentId: payment.id,
+          wincReserved,
+        });
+      }
     } else if (mode === "topup") {
       // Top-up: Credit entire amount to user's balance
       wincCredited = wincPaid;

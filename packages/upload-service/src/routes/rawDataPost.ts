@@ -190,7 +190,7 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
       byteCount,
       nativeAddress: payerAddress, // Use the payer's address, not the signer's
       signatureType: 3, // Ethereum signature type (payer signs with their Ethereum wallet)
-      mode: "hybrid", // Default to hybrid mode
+      mode: "payg", // Force PAYG mode - x402 is stateless, no credit assignment
     });
 
     if (!paymentResult.success) {

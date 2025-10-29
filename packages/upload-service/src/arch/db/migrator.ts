@@ -1171,3 +1171,42 @@ export class ConfigTableMigrator extends Migrator {
     });
   }
 }
+
+export class X402PaymentsMigrator extends Migrator {
+  constructor(private readonly knex: Knex) {
+    super();
+  }
+  private noTimeZone = { useTz: false };
+
+  public migrate() {
+    return this.operate({
+      name: "migrate to x402 payments table",
+      operation: async () => {
+        await this.knex.schema.createTable("x402_payments", (table) => {
+          table.uuid("payment_id").primary();
+          table.string("tx_hash", 66).notNullable().index(); // Ethereum tx hash (0x + 64 hex chars)
+          table.string("network", 50).notNullable(); // e.g., "base-sepolia", "base-mainnet"
+          table.string("payer_address", 42).notNullable().index(); // Ethereum address
+          table.string("usdc_amount", 255).notNullable(); // USDC atomic units (6 decimals)
+          table.string("winc_amount", 255).notNullable(); // Winston amount
+          table.string("data_item_id", 43).nullable().index(); // Linked after data item creation
+          table.bigInteger("byte_count").notNullable(); // Declared byte count
+          table.timestamp("created_at", this.noTimeZone).defaultTo(this.knex.fn.now()).notNullable();
+          table.timestamp("settled_at", this.noTimeZone).defaultTo(this.knex.fn.now()).notNullable();
+
+          // Composite index for queries by payer and time
+          table.index(["payer_address", "created_at"]);
+        });
+      },
+    });
+  }
+
+  public rollback() {
+    return this.operate({
+      name: "rollback from x402 payments table",
+      operation: async () => {
+        await this.knex.schema.dropTableIfExists("x402_payments");
+      },
+    });
+  }
+}
