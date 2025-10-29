@@ -398,9 +398,11 @@
           throw new Error(`Network ${networkKey} not available`);
         }
 
-        // Use the EXACT amount from the 402 response - no buffer needed
-        const amount = ethers.formatUnits(requirements.maxAmountRequired, 6);
-        log(`💰 Payment required: ${amount} USDC`, 'warning');
+        // Add small buffer to handle price fluctuations and calculation differences
+        const baseAmount = BigInt(requirements.maxAmountRequired);
+        const bufferedAmount = (baseAmount * BigInt(101)) / BigInt(100); // 1% buffer
+        const amount = ethers.formatUnits(bufferedAmount, 6);
+        log(`💰 Payment required: ${amount} USDC (base: ${ethers.formatUnits(baseAmount, 6)} + 1% buffer)`, 'warning');
 
         // Create EIP-712 payment authorization with proper timestamps
         const currentTime = Math.floor(Date.now() / 1000);
@@ -418,7 +420,7 @@
         const authorization = {
           from: userAddress,
           to: requirements.payTo,
-          value: requirements.maxAmountRequired,
+          value: bufferedAmount.toString(),
           validAfter,
           validBefore,
           nonce,
