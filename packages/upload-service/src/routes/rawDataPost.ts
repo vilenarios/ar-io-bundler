@@ -25,10 +25,16 @@ import { W } from "../types/winston";
 import { fromB64Url, jwkToPublicArweaveAddress } from "../utils/base64";
 import { errorResponse } from "../utils/common";
 import { createDataItemFromRaw } from "../utils/createDataItem";
+import { putDataItemRaw } from "../utils/objectStoreUtils";
+import {
+  encodeTagsForOptical,
+  signDataItemHeader,
+} from "../utils/opticalUtils";
 import { parseRawDataRequest, validateRawData } from "../utils/rawDataUtils";
 import { signReceipt } from "../utils/signReceipt";
 
 const rawDataUploadsEnabled = process.env.RAW_DATA_UPLOADS_ENABLED === "true";
+const opticalBridgingEnabled = process.env.OPTICAL_BRIDGING_ENABLED !== "false";
 
 /**
  * Handle raw data upload with x402 payment
@@ -194,9 +200,15 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
 
   // Store the data item (same flow as signed uploads)
   try {
-    // Store to object store
+    // Store to object store with proper prefix for AR.IO gateway access
     const dataStream = Readable.from(dataItemBuffer);
-    await ctx.state.objectStore.putObject(dataItem.id, dataStream);
+    await putDataItemRaw(
+      ctx.state.objectStore,
+      dataItem.id,
+      dataStream,
+      payloadContentType,
+      payloadDataStart
+    );
 
     // Get assessed winston price (either paid or reserved)
     const assessedWinstonPrice = paymentResult.wincPaid || paymentResult.wincReserved || W("0");
@@ -240,6 +252,44 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
       dataItemId: dataItem.id,
       queueJob: jobLabels.newDataItem,
     });
+
+    // Enqueue data item for optical bridging
+    if (opticalBridgingEnabled) {
+      try {
+        logger.debug("Enqueuing raw data item for optical posting...");
+        const uploadTimestamp = Date.now();
+
+        const signedDataItemHeader = await signDataItemHeader(
+          encodeTagsForOptical({
+            id: dataItem.id,
+            signature: signatureB64Url,
+            owner: dataItem.owner,
+            owner_address: ownerPublicAddress,
+            target: dataItem.target || "",
+            content_type: payloadContentType || "application/octet-stream",
+            data_size: byteCount,
+            tags: dataItem.tags,
+          })
+        );
+
+        await enqueue(jobLabels.opticalPost, {
+          ...signedDataItemHeader,
+          uploaded_at: uploadTimestamp,
+        });
+
+        logger.info("Raw data item enqueued for optical posting", {
+          dataItemId: dataItem.id,
+        });
+      } catch (opticalError) {
+        // Soft error, just log
+        logger.error("Error while attempting to enqueue for optical bridging!", {
+          error: opticalError,
+          dataItemId: dataItem.id,
+        });
+      }
+    } else {
+      logger.debug("Optical bridging disabled - skipping optical post");
+    }
   } catch (error) {
     logger.error("Failed to store data item", { error });
     return errorResponse(ctx, {
