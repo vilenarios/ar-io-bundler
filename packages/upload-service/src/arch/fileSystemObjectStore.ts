@@ -33,28 +33,33 @@ import logger from "../logger";
 import { PayloadInfo, UploadId } from "../types/types";
 import { streamToBuffer } from "../utils/streamToBuffer";
 import { MoveObjectParams, ObjectStore } from "./objectStore";
+import path from "path";
+
+// Configurable temp directory for FileSystemObjectStore
+const TEMP_DIR = process.env.TEMP_DIR || "temp";
 
 const localDirectories = [
-  "temp",
-  "temp/bundle",
-  "temp/raw-data-item",
-  "temp/header",
-  "temp/bundle-payload",
-  "temp/data",
-  "temp/multipart-uploads",
+  TEMP_DIR,
+  path.join(TEMP_DIR, "bundle"),
+  path.join(TEMP_DIR, "raw-data-item"),
+  path.join(TEMP_DIR, "header"),
+  path.join(TEMP_DIR, "bundle-payload"),
+  path.join(TEMP_DIR, "data"),
+  path.join(TEMP_DIR, "multipart-uploads"),
 ];
+
 export class FileSystemObjectStore implements ObjectStore {
   constructor() {
     // create the directories if they don't exist
     for (const dir of localDirectories) {
       if (!existsSync(dir)) {
-        mkdirSync(dir);
+        mkdirSync(dir, { recursive: true });
       }
     }
   }
 
   public async putObject(Key: string, fileReadStream: Readable) {
-    logger.debug(`Writing file to temp/${Key} `);
+    logger.debug(`Writing file to ${path.join(TEMP_DIR, Key)} `);
 
     if (fileReadStream.errored) {
       throw new Error("File read stream errored");
@@ -71,7 +76,7 @@ export class FileSystemObjectStore implements ObjectStore {
     });
 
     try {
-      await writeFile(`temp/${Key}`, fileReadStream, { signal });
+      await writeFile(path.join(TEMP_DIR, Key), fileReadStream, { signal });
       logger.debug("File written successfully");
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
@@ -92,7 +97,7 @@ export class FileSystemObjectStore implements ObjectStore {
     const end = range?.[1] ?? undefined;
 
     const getFileReadStream = () => {
-      return createReadStream(`temp/${Key}`, {
+      return createReadStream(path.join(TEMP_DIR, Key), {
         start: start !== undefined ? +start : start,
         end: end !== undefined ? +end : end,
       });
@@ -114,7 +119,7 @@ export class FileSystemObjectStore implements ObjectStore {
   }
 
   public getObjectByteCount(Key: string): Promise<number> {
-    return Promise.resolve(statSync(`temp/${Key}`).size);
+    return Promise.resolve(statSync(path.join(TEMP_DIR, Key)).size);
   }
 
   public getObjectPayloadInfo(_Key: string): Promise<PayloadInfo> {
@@ -177,7 +182,7 @@ export class FileSystemObjectStore implements ObjectStore {
     ContentType: string | undefined;
   }> {
     // TODO: Just use MD5 of read stream for etag?
-    const readable = createReadStream(`temp/${Key}`);
+    const readable = createReadStream(path.join(TEMP_DIR, Key));
     readable.on("error", () => {
       readable.destroy();
     });

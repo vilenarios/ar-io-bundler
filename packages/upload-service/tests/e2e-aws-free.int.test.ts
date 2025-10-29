@@ -1,14 +1,18 @@
 /**
  * Copyright (C) 2022-2024 Permanent Data Solutions, Inc. All Rights Reserved.
  *
- * End-to-End Integration Tests for AWS-Free Upload Service
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
  *
- * Tests the complete flow:
- * 1. Upload data item via HTTP
- * 2. Verify storage in MinIO
- * 3. Verify BullMQ queue processing
- * 4. Verify offset storage in PostgreSQL
- * 5. Verify AR.IO Gateway optical bridging
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 import { ArweaveSigner, createData } from "@dha-team/arbundles";
 import Arweave from "arweave";

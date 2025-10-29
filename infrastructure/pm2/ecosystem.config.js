@@ -105,16 +105,18 @@ module.exports = {
     },
 
     // Bull Board - Queue Monitoring Dashboard
+    // Monitors all 13 queues: 11 upload + 2 payment service queues
     {
       name: "bull-board",
-      script: "./packages/upload-service/bull-board-server.ts",
+      script: "./packages/upload-service/bull-board-server.js",
       cwd: process.cwd(),
-      interpreter: "ts-node",
       instances: 1,
       exec_mode: "fork",
       env: {
         NODE_ENV: process.env.NODE_ENV || "production",
         BULL_BOARD_PORT: 3002,
+        REDIS_QUEUE_HOST: "localhost",
+        REDIS_QUEUE_PORT: "6381",
       },
       error_file: "/home/vilenarios/ar-io-bundler/logs/bull-board-error.log",
       out_file: "/home/vilenarios/ar-io-bundler/logs/bull-board-out.log",

@@ -57,10 +57,13 @@ export function backupFsAvailable(): boolean {
   return !fsBreaker.breaker.opened;
 }
 
-export const UPLOAD_DATA_PATH = path.join(
-  process.env.EFS_MOUNT_POINT ?? ".",
-  "upload-service-data"
-);
+// Configurable data path for filesystem backup storage
+// Priority: FS_DATA_PATH > EFS_MOUNT_POINT/upload-service-data > ./upload-service-data
+export const UPLOAD_DATA_PATH =
+  process.env.FS_DATA_PATH ??
+  (process.env.EFS_MOUNT_POINT
+    ? path.join(process.env.EFS_MOUNT_POINT, "upload-service-data")
+    : path.join(".", "upload-service-data"));
 
 export async function ensureDataItemsBackupDirExists(): Promise<void> {
   await fsBreaker.fire(async () => {
