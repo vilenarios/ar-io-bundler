@@ -93,10 +93,32 @@ components:
       name: X-PAYMENT
       in: header
       required: false
-      description: Base64-encoded x402 payment authorization. When provided, enables pay-as-you-go upload payments using EIP-3009 USDC transfers. Requires Content-Length header to be present.
+      description: |
+        Base64-encoded x402 payment authorization for pay-as-you-go USDC payments.
+
+        **x402 Payment Flow:**
+        1. Upload without X-PAYMENT → Server returns 402 with payment requirements
+        2. Client creates EIP-3009 authorization and signs with EIP-712
+        3. Client retries upload with X-PAYMENT header containing base64(JSON)
+        4. Server verifies signature, settles USDC transfer, processes upload
+        5. Server returns receipt with x402Payment object and X-Payment-Response header
+
+        **Requirements:**
+        - Must be base64-encoded JSON with x402Version, scheme, network, and payload
+        - Payload must contain EIP-3009 authorization: from, to, value, validAfter, validBefore, nonce
+        - Payload must contain EIP-712 signature of the authorization
+        - Content-Length header MUST be present (for fraud detection)
+
+        **Supported Networks:** base-sepolia, base-mainnet
+
+        **Standards:**
+        - x402 Protocol: https://github.com/coinbase/x402
+        - EIP-3009: TransferWithAuthorization (gasless USDC transfers)
+        - EIP-712: Typed structured data signing
       schema:
         type: string
-        example: "eyJ4NDAyVmVyc2lvbiI6MSwic2NoZW1lIjoiZWlwLTMwMDkiLCJuZXR3b3JrIjoiYmFzZS1tYWlubmV0IiwicGF5bG9hZCI6ey4uLn19"
+        format: byte
+        example: "eyJ4NDAyVmVyc2lvbiI6MSwic2NoZW1lIjoiZXhhY3QiLCJuZXR3b3JrIjoiYmFzZS1zZXBvbGlhIiwicGF5bG9hZCI6eyJzaWduYXR1cmUiOiIweDEyMy4uLiIsImF1dGhvcml6YXRpb24iOnsiZnJvbSI6IjB4YWJjLi4uIiwidG8iOiIweGRlZi4uLiIsInZhbHVlIjoiMTAwMDAwMCIsInZhbGlkQWZ0ZXIiOjAsInZhbGlkQmVmb3JlIjoxNzM1Njg5NjAwLCJub25jZSI6IjB4MTIzLi4uIn19fQ=="
 
     x-tag-custom:
       name: X-Tag-*
@@ -209,26 +231,37 @@ components:
           example: "qREovbmD6oxgHYNCzOeTei07lSz0-YLcjnvgSDzqptsCiqNOtB3RKUToSX5hkPD45fJDY4057XkkcsQRuGsU8y9rgm37i-Kiyd5Z_iy6pJXrwi9XnAgGL118lIV790GZ7xe5o3DvPV3Px74C0ABsfL9lW86D4t_qClJ6wSQksKNd7rnUImIvHW0vxLswST7dfUngevzKt4kv48VTub4951XdUHjb45Uurf7xFYSCizAGtGqr5GYDFrVk-mNrzFH5bXt06PJfxe9E5ujIE5Uq1Az6vqEOO0E1mWmXqdTPluAxcjmgktkoNLHZnnU-BsYuFaTWW5NU3aS-RgJKXYs9O6Dc1-2SITl-H_wtdGNSj31fj72UkaAbkpA1mionK-8bOIkSpYgKCyTC42oHh1Fw4SLXPyLxBj1w6F32LSLjpse5dmKymj4fJPezCMdi709uIiVT7XOm4LZBCzFOxS6-UNxgE57dBFpcWkcqNO3p00biYqH5d5bzvK3bwd-4j0KyKlqPYTProSnd3P6ROZuuJaLoLD_Or5-L_dUjawHz-DFlzmckYaf8l3XdzPM4JSsE8CEDZl0NCN0AidXt_wjbr6k9JsO7cnLB226AjxhcyuxZOlhgkIn7EbxpVXx-O2mXkcXF8PixCP0k5brtriLeF1MAdspgd_S-LKQeGVr7-mk"
         x402Payment:
           type: object
-          description: x402 payment information (only present if upload was paid via X-PAYMENT header)
+          description: |
+            x402 payment information - present when upload was paid via X-PAYMENT header.
+
+            Contains blockchain transaction details for verification and audit trail.
+            The payment is settled on-chain via EIP-3009 USDC transfer before upload completes.
           properties:
             paymentId:
               type: string
               format: uuid
-              description: Unique payment identifier (UUID)
+              description: Unique payment identifier (UUID) for tracking and reconciliation
               example: "550e8400-e29b-41d4-a716-446655440000"
             transactionHash:
               type: string
-              description: Blockchain transaction hash for the USDC transfer
+              description: |
+                Blockchain transaction hash for the USDC transfer.
+                Can be verified on block explorer (e.g., BaseScan for Base network).
               example: "0xb8a52725cdc816d060392dcecaa1528872acf9ea0bd097a86e2432dd5d2213ca"
             network:
               type: string
-              description: Network where payment was made
+              description: Network where payment was settled
+              enum: [base-sepolia, base-mainnet]
               example: "base-mainnet"
             mode:
               type: string
               enum: [payg, topup, hybrid]
-              description: Payment mode - payg (pay-as-you-go, only for this upload), topup (credit entire amount to balance), hybrid (reserve for upload + credit excess)
-              example: "hybrid"
+              description: |
+                Payment mode (currently always "payg" for x402):
+                - payg: Pay-as-you-go (payment covers only this specific upload)
+                - topup: Credit account balance (currently not used for x402)
+                - hybrid: Reserve for upload + credit excess (currently not used for x402)
+              example: "payg"
     CreateMultipartUpload:
       type: object
       properties:
@@ -557,12 +590,77 @@ paths:
             X-Payment-Response:
               schema:
                 type: string
-              description: Base64-encoded x402 payment response (present if upload was paid via x402)
-              example: "eyJwYXltZW50SWQiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJ0eEhhc2giOiIweGFiYy4uLiIsIm5ldHdvcmsiOiJiYXNlLW1haW5uZXQiLCJtb2RlIjoiaHlicmlkIn0="
+                format: byte
+              description: |
+                Base64-encoded x402 payment response (present only if upload was paid via X-PAYMENT header).
+
+                **Decodes to JSON with:**
+                - paymentId: UUID for tracking
+                - txHash: Blockchain transaction hash (verify on block explorer)
+                - network: Payment network (e.g., "base-mainnet")
+                - mode: Payment mode (currently always "payg")
+
+                **Example (decoded):**
+                ```json
+                {
+                  "paymentId": "550e8400-e29b-41d4-a716-446655440000",
+                  "transactionHash": "0xb8a52725cdc816d060392dcecaa1528872acf9ea0bd097a86e2432dd5d2213ca",
+                  "network": "base-mainnet",
+                  "mode": "payg"
+                }
+                ```
+
+                **Per x402 standard:** This header provides payment confirmation and can be used by clients
+                to verify the payment was successfully settled on-chain.
+              example: "eyJwYXltZW50SWQiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJ0cmFuc2FjdGlvbkhhc2giOiIweGI4YTUyNzI1Y2RjODE2ZDA2MDM5MmRjZWNhYTE1Mjg4NzJhY2Y5ZWEwYmQwOTdhODZlMjQzMmRkNWQyMjEzY2EiLCJuZXR3b3JrIjoiYmFzZS1tYWlubmV0IiwibW9kZSI6InBheWcifQ=="
           content:
             application/json:
               schema:
                 "$ref": "#/components/schemas/DataItemPost"
+              examples:
+                SignedUploadWithX402:
+                  summary: ANS-104 upload paid with x402
+                  description: |
+                    Traditional signed ANS-104 data item upload paid via x402 USDC payment.
+                    Client signs data item with their wallet, includes X-PAYMENT header with USDC authorization.
+                  value:
+                    id: "QpmY8mZmFEC8RxNsgbxSV6e36OF6quIYaPRKzvUco0o"
+                    timestamp: 1700590909589
+                    version: "0.2.0"
+                    owner: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0"
+                    deadlineHeight: 1310000
+                    dataCaches: ["arweave.net"]
+                    fastFinalityIndexes: ["arweave.net"]
+                    winc: "1000000"
+                    signature: "iU_S6uuG1OD8k0XqMGOmbcKfysDckEMUy4R9-ODPXiQj..."
+                    public: "qREovbmD6oxgHYNCzOeTei07lSz0-YLcjnvgSDzqpts..."
+                    x402Payment:
+                      paymentId: "550e8400-e29b-41d4-a716-446655440000"
+                      transactionHash: "0xb8a52725cdc816d060392dcecaa1528872acf9ea0bd097a86e2432dd5d2213ca"
+                      network: "base-mainnet"
+                      mode: "payg"
+                RawDataUploadWithX402:
+                  summary: Raw data upload (server-signed) with x402
+                  description: |
+                    Simplified flow for AI agents - raw data uploaded, server creates ANS-104 data item.
+                    Requires X-PAYMENT header. Owner is server wallet, payer is Ethereum address from payment.
+                  value:
+                    id: "ZpmY8mZmFEC8RxNsgbxSV6e36OF6quIYaPRKzvUcp1q"
+                    timestamp: 1700590909589
+                    version: "0.2.0"
+                    owner: "8wgRDgvYOrtSaWEIV21g0lTuWDUnTu4_iYj4hmA7PI0"
+                    payer: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0"
+                    deadlineHeight: 1310000
+                    dataCaches: ["arweave.net"]
+                    fastFinalityIndexes: ["arweave.net"]
+                    winc: "1000000"
+                    signature: "jV_T7vvH2PE9l1YrNHPncLgzteEflFNVz5S0-PEQYjRk..."
+                    public: "rSFpwcmE7pyfTmt1qJWYoVWnR5yX1nt0-ZMdkjpXmqt..."
+                    x402Payment:
+                      paymentId: "660f9511-f3ac-52e5-b827-557766551111"
+                      transactionHash: "0xc9b63836dde927e171504fa1539ecbb1e3c9dc8c1cd208c7c5c9fb5c3344eddb"
+                      network: "base-mainnet"
+                      mode: "payg"
         "202":
           description: Data item has already been posted to this service.
           content:
@@ -574,64 +672,133 @@ paths:
                   value: Data Item Exists
 
         "402":
-          description: Payment Required - No balance available, x402 payment needed. This is the x402-compliant response that enables automatic payment with x402-fetch and other standard clients.
+          description: |
+            Payment Required - No balance available, x402 payment needed.
+
+            **This is the standard x402-compliant 402 response** that enables automatic payment
+            with x402-fetch and other x402 standard clients.
+
+            **Response Flow:**
+            1. Client uploads without payment → Receives this 402 response
+            2. Client extracts payment requirements from response body
+            3. Client creates EIP-3009 authorization and signs with EIP-712
+            4. Client retries upload with X-PAYMENT header
+            5. Server processes payment and accepts upload
+
+            **For browser clients:** If Accept header includes "text/html", the payment service
+            may return an interactive HTML paywall with MetaMask integration and Coinbase Onramp.
           headers:
             X-Payment-Required:
               schema:
                 type: string
-              description: x402 protocol version
+              description: x402 protocol version identifier
               example: "x402-1"
           content:
             application/json:
               schema:
                 type: object
+                required:
+                  - x402Version
+                  - accepts
                 properties:
                   x402Version:
                     type: integer
+                    description: x402 protocol version (currently 1)
                     example: 1
                   accepts:
                     type: array
+                    description: Array of accepted payment methods (may include multiple networks)
                     items:
                       type: object
+                      required:
+                        - scheme
+                        - network
+                        - maxAmountRequired
+                        - resource
+                        - description
+                        - mimeType
+                        - payTo
+                        - maxTimeoutSeconds
+                        - asset
                       properties:
                         scheme:
                           type: string
+                          description: Payment scheme identifier
+                          enum: ["exact"]
                           example: "exact"
                         network:
                           type: string
+                          description: Blockchain network identifier
+                          enum: ["base-sepolia", "base-mainnet"]
                           example: "base-mainnet"
                         maxAmountRequired:
                           type: string
-                          description: Maximum payment required in USDC atomic units (6 decimals)
+                          description: |
+                            Maximum USDC payment required in smallest unit (6 decimals).
+                            Example: "1000000" = 1.00 USDC
                           example: "1000000"
                         resource:
                           type: string
+                          description: The resource URL being paid for (this upload endpoint)
                           example: "/v1/tx"
                         description:
                           type: string
-                          example: "Upload data to Arweave via AR.IO Bundler"
+                          description: Human-readable description of what the payment is for
+                          example: "Upload 1024 bytes to Arweave via AR.IO Bundler"
                         mimeType:
                           type: string
+                          description: Expected MIME type of successful response
                           example: "application/json"
+                        outputSchema:
+                          type: object
+                          description: JSON schema describing the successful response structure
                         payTo:
                           type: string
+                          description: Recipient Ethereum address for USDC payment
                           example: "0x6A0A10FFD285c971B841bee8892878c0d583Bf67"
                         maxTimeoutSeconds:
                           type: integer
+                          description: Maximum time in seconds before authorization expires
                           example: 300
                         asset:
                           type: string
-                          description: EIP-3009 compliant USDC contract address
+                          description: EIP-3009 compliant USDC contract address on the specified network
                           example: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
                         extra:
                           type: object
+                          description: Additional metadata about the payment asset (for EIP-712 domain)
                           properties:
                             name:
                               type: string
+                              description: Token name for EIP-712 domain
                               example: "USD Coin"
                             version:
                               type: string
+                              description: EIP-712 domain version for USDC contract
                               example: "2"
+                  error:
+                    type: string
+                    description: Optional error message providing additional context
+                    example: "Insufficient balance"
+              examples:
+                NoBalanceX402Required:
+                  summary: Standard 402 response for x402 payment
+                  value:
+                    x402Version: 1
+                    accepts:
+                      - scheme: "exact"
+                        network: "base-mainnet"
+                        maxAmountRequired: "1000000"
+                        resource: "/v1/tx"
+                        description: "Upload 1024 bytes to Arweave via AR.IO Bundler"
+                        mimeType: "application/json"
+                        payTo: "0x6A0A10FFD285c971B841bee8892878c0d583Bf67"
+                        maxTimeoutSeconds: 300
+                        asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+                        extra:
+                          name: "USD Coin"
+                          version: "2"
+                    error: "Insufficient balance"
 
         "400":
           description: Invalid data item post

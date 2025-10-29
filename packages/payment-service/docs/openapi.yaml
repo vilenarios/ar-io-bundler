@@ -1160,19 +1160,32 @@ paths:
       description: |
         Returns payment requirements for uploading data of a given size. This is the first step in the x402 payment flow.
 
-        **Per x402 standard**: Price quote endpoints return **200 OK** (not 402). The actual 402 response happens at the protected resource (upload endpoint).
+        **IMPORTANT: Per x402 standard, this endpoint returns 200 OK (not 402).**
+        The actual 402 Payment Required response happens at the protected resource (upload endpoint at /v1/tx).
 
-        **Content Negotiation**:
-        - API clients (Accept: application/json) receive JSON payment requirements
-        - Browser clients (Accept: text/html) receive an interactive HTML paywall with Coinbase Onramp (if X_402_CDP_CLIENT_KEY is configured)
+        **Three-Phase x402 Flow:**
+        1. **Price Quote** (this endpoint): Client gets payment requirements → 200 OK with requirements
+        2. **Upload Attempt**: Client uploads to /v1/tx without payment → 402 Payment Required
+        3. **Paid Upload**: Client uploads to /v1/tx with X-PAYMENT header → 200 OK with receipt
 
-        **Browser Paywall Features** (when X_402_CDP_CLIENT_KEY is set):
-        - Interactive payment authorization UI
-        - MetaMask wallet integration for EIP-712 signing
-        - Coinbase Onramp widget for purchasing USDC
-        - Automatic payment signature generation
+        **Content Negotiation:**
+        - **API clients** (Accept: application/json): Receive JSON payment requirements for programmatic use
+        - **Browser clients** (Accept: text/html): Receive interactive HTML paywall (if X_402_CDP_CLIENT_KEY configured)
 
-        The actual 402 Payment Required response is returned by the upload endpoint when a file upload is attempted without payment.
+        **Browser Paywall Features** (when X_402_CDP_CLIENT_KEY environment variable is set):
+        - Interactive payment authorization UI with wallet connection
+        - MetaMask integration for EIP-712 signature generation
+        - Coinbase Onramp widget for purchasing USDC if user lacks funds
+        - Automatic base64 encoding of payment authorization
+        - Copy-to-clipboard functionality for X-PAYMENT header value
+
+        **Pricing Calculation:**
+        - Converts byte count → Winston (Arweave storage cost)
+        - Adds pricing buffer (default 5%) for volatility protection
+        - Converts Winston → USD → USDC (6 decimals)
+        - Returns maxAmountRequired in USDC smallest unit
+
+        **Supported Networks:** base-sepolia, base-mainnet (configurable via X402_NETWORKS)
 
       parameters:
         - name: signatureType
@@ -1180,7 +1193,12 @@ paths:
           required: true
           schema:
             type: integer
-            description: Signature type (1=Arweave, 3=Ethereum, 4=Solana, etc.)
+            description: |
+              ANS-104 signature type for the data item:
+              - 1: Arweave (RSA-PSS with SHA-256)
+              - 3: Ethereum (ECDSA secp256k1)
+              - 4: Solana (Ed25519)
+            enum: [1, 3, 4]
             example: 3
 
         - name: address
@@ -1188,52 +1206,124 @@ paths:
           required: true
           schema:
             type: string
-            description: User's wallet address
-            example: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+            description: |
+              User's wallet address in format matching signatureType.
+              Used for tracking and analytics (not for payment verification).
+            example: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0"
 
         - name: bytes
           in: query
           required: true
           schema:
             type: integer
-            description: Number of bytes to upload
+            minimum: 1
+            description: |
+              Number of bytes to upload (data item size).
+              Used to calculate storage cost and USDC payment amount.
             example: 1024
 
       responses:
         "200":
-          description: OK - Returns x402 payment requirements (per x402 standard for price quotes)
+          description: |
+            OK - Returns x402 payment requirements (per x402 standard, price quotes return 200 not 402).
+
+            **Response format depends on Accept header:**
+            - application/json: Structured payment requirements for programmatic use
+            - text/html: Interactive paywall for browser users (if X_402_CDP_CLIENT_KEY configured)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/X402PaymentRequiredResponse"
-              example:
-                x402Version: 1
-                accepts:
-                  - scheme: exact
-                    network: base-mainnet
-                    maxAmountRequired: "1000000"
-                    resource: "/v1/tx"
-                    description: "Upload data to Arweave via AR.IO Bundler"
-                    mimeType: "application/json"
-                    payTo: "0x6A0A10FFD285c971B841bee8892878c0d583Bf67"
-                    maxTimeoutSeconds: 300
-                    asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
-                    extra:
-                      name: "USD Coin"
-                      version: "2"
+              examples:
+                SingleNetwork:
+                  summary: Single network (base-mainnet only)
+                  value:
+                    x402Version: 1
+                    accepts:
+                      - scheme: "exact"
+                        network: "base-mainnet"
+                        maxAmountRequired: "1000000"
+                        resource: "/v1/tx"
+                        description: "Upload 1024 bytes to Arweave via AR.IO Bundler"
+                        mimeType: "application/json"
+                        outputSchema:
+                          type: "object"
+                          properties:
+                            id:
+                              type: "string"
+                              description: "Data item ID"
+                            timestamp:
+                              type: "number"
+                              description: "Upload timestamp"
+                            x402Payment:
+                              type: "object"
+                              description: "x402 payment details"
+                        payTo: "0x6A0A10FFD285c971B841bee8892878c0d583Bf67"
+                        maxTimeoutSeconds: 300
+                        asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+                        extra:
+                          name: "USD Coin"
+                          version: "2"
+                MultipleNetworks:
+                  summary: Multiple networks enabled
+                  value:
+                    x402Version: 1
+                    accepts:
+                      - scheme: "exact"
+                        network: "base-mainnet"
+                        maxAmountRequired: "1000000"
+                        resource: "/v1/tx"
+                        description: "Upload 1024 bytes to Arweave via AR.IO Bundler"
+                        mimeType: "application/json"
+                        payTo: "0x6A0A10FFD285c971B841bee8892878c0d583Bf67"
+                        maxTimeoutSeconds: 300
+                        asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+                        extra:
+                          name: "USD Coin"
+                          version: "2"
+                      - scheme: "exact"
+                        network: "base-sepolia"
+                        maxAmountRequired: "1000000"
+                        resource: "/v1/tx"
+                        description: "Upload 1024 bytes to Arweave via AR.IO Bundler"
+                        mimeType: "application/json"
+                        payTo: "0x6A0A10FFD285c971B841bee8892878c0d583Bf67"
+                        maxTimeoutSeconds: 300
+                        asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+                        extra:
+                          name: "USD Coin"
+                          version: "2"
             text/html:
               schema:
                 type: string
-                description: Interactive HTML paywall (for browser clients when X_402_CDP_CLIENT_KEY is configured)
+                description: |
+                  Interactive HTML paywall (only for browser clients when X_402_CDP_CLIENT_KEY is configured).
+
+                  **Features:**
+                  - MetaMask wallet connection
+                  - EIP-712 payment authorization signing
+                  - Coinbase Onramp for purchasing USDC
+                  - Copy X-PAYMENT header to clipboard
+                  - Automatic retry with payment
+
+                  **When shown:** Accept: text/html AND User-Agent contains "Mozilla" AND X_402_CDP_CLIENT_KEY env var is set
               example: |
                 <!DOCTYPE html>
                 <html>
-                  <head><title>AR.IO Bundler - Payment Required</title></head>
+                  <head>
+                    <title>AR.IO Bundler - Payment Required</title>
+                    <script src="https://cdn.onramp.money/main.js"></script>
+                  </head>
                   <body>
                     <h1>Payment Required</h1>
-                    <p>Amount: 0.001000 USDC on Base</p>
-                    <button>Connect Wallet & Authorize Payment</button>
-                    <button>Don't have USDC? Buy some first</button>
+                    <p>Upload Cost: <strong>0.001000 USDC</strong> on <strong>Base</strong></p>
+                    <button id="connect-wallet">Connect Wallet & Authorize Payment</button>
+                    <button id="buy-usdc">Don't have USDC? Buy some first</button>
+                    <div id="payment-result" style="display:none;">
+                      <h3>Payment Authorization Ready</h3>
+                      <pre id="payment-header"></pre>
+                      <button id="copy-payment">Copy X-PAYMENT Header</button>
+                    </div>
                   </body>
                 </html>
 
@@ -1258,7 +1348,33 @@ paths:
       tags:
         - x402
       summary: Verify and settle x402 payment
-      description: Verifies an EIP-3009 payment authorization and settles payment according to the specified mode (payg, topup, or hybrid)
+      description: |
+        Verifies an EIP-3009 payment authorization and settles payment on-chain according to the specified mode.
+
+        **This is Phase 2 of the x402 flow** - verifying and settling the payment.
+
+        **Process:**
+        1. Decode base64 payment header to extract EIP-3009 authorization
+        2. Verify EIP-712 signature matches authorization parameters
+        3. Check authorization hasn't been used or expired
+        4. Call USDC contract's `receiveWithAuthorization()` to settle payment
+        5. Convert USDC → Winston (Arweave storage credits)
+        6. Apply payment according to mode (payg, topup, or hybrid)
+        7. Record transaction in database with payment ID
+        8. Return success with transaction hash for verification
+
+        **Payment Modes:**
+        - **payg** (Pay-as-you-go): Payment reserved for specific upload only
+        - **topup**: Entire payment amount credited to user's account balance
+        - **hybrid**: Reserve for upload + credit any excess to balance (DEFAULT)
+
+        **Security:**
+        - EIP-712 signature verification prevents unauthorized transfers
+        - Nonce prevents replay attacks
+        - validBefore/validAfter enforce time bounds
+        - On-chain settlement provides cryptographic proof
+
+        **Called by:** Upload service during data item upload when X-PAYMENT header is present
 
       parameters:
         - name: signatureType
@@ -1266,7 +1382,8 @@ paths:
           required: true
           schema:
             type: integer
-            description: Signature type (1=Arweave, 3=Ethereum, 4=Solana, etc.)
+            description: ANS-104 signature type (1=Arweave, 3=Ethereum, 4=Solana)
+            enum: [1, 3, 4]
             example: 3
 
         - name: address
@@ -1274,38 +1391,89 @@ paths:
           required: true
           schema:
             type: string
-            description: User's wallet address
-            example: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+            description: User's wallet address (used for tracking, not payment verification)
+            example: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0"
 
       requestBody:
         required: true
+        description: |
+          Payment authorization details extracted from X-PAYMENT header.
+
+          The upload service extracts this from the user's X-PAYMENT header and forwards it
+          to the payment service for verification and settlement.
         content:
           application/json:
             schema:
               type: object
               required:
                 - paymentHeader
-                - dataItemId
                 - byteCount
               properties:
                 paymentHeader:
                   type: string
-                  description: Base64-encoded x402 payment authorization (EIP-3009 signature)
-                  example: "eyJ4NDAyVmVyc2lvbiI6MSwic2NoZW1lIjoiZWlwLTMwMDkiLCJuZXR3b3JrIjoiYmFzZS1tYWlubmV0IiwicGF5bG9hZCI6ey4uLn19"
+                  format: byte
+                  description: |
+                    Base64-encoded x402 payment authorization (same value from X-PAYMENT header).
+
+                    **Decodes to JSON with:**
+                    - x402Version: 1
+                    - scheme: "exact"
+                    - network: "base-mainnet" or "base-sepolia"
+                    - payload:
+                      - signature: EIP-712 signature of authorization
+                      - authorization:
+                        - from: Payer's Ethereum address
+                        - to: Recipient address (service's Ethereum wallet)
+                        - value: USDC amount in smallest unit (6 decimals)
+                        - validAfter: Unix timestamp
+                        - validBefore: Unix timestamp
+                        - nonce: Unique nonce (bytes32)
+                  example: "eyJ4NDAyVmVyc2lvbiI6MSwic2NoZW1lIjoiZXhhY3QiLCJuZXR3b3JrIjoiYmFzZS1tYWlubmV0IiwicGF5bG9hZCI6eyJzaWduYXR1cmUiOiIweGFiY2RlZi4uLiIsImF1dGhvcml6YXRpb24iOnsiZnJvbSI6IjB4NzQyZDM1Q2M2NjM0QzA1MzI5MjVhM2I4NDRCYzllNzU5NWYwYkViMCIsInRvIjoiMHg2QTBBMTBGZUQ4NWM5NzFCODQxYmVlODg5Mjg3OGMwZDU4M0JmNjciLCJ2YWx1ZSI6IjEwMDAwMDAiLCJ2YWxpZEFmdGVyIjowLCJ2YWxpZEJlZm9yZSI6MTczNTY4OTYwMCwibm9uY2UiOiIweDEyMzQ1Njc4OTBhYmNkZWYuLi4ifX19"
                 dataItemId:
                   type: string
-                  description: Data item ID being uploaded
+                  description: |
+                    Data item ID being uploaded (optional for PAYG mode).
+
+                    For PAYG mode, this can be provided later via link endpoint.
+                    For hybrid mode, this is required upfront.
                   example: "QpmY8mZmFEC8RxNsgbxSV6e36OF6quIYaPRKzvUco0o"
                 byteCount:
                   type: integer
-                  description: Declared byte count for the upload
+                  minimum: 1
+                  description: |
+                    Declared byte count for the upload (required for PAYG and hybrid modes).
+
+                    Used to calculate Winston cost and determine if payment is sufficient.
+                    Must match Content-Length header from upload request.
                   example: 1024
                 mode:
                   type: string
-                  description: Payment mode
+                  description: |
+                    Payment mode - determines how payment is applied.
+
+                    **payg**: Payment reserved for this specific upload only
+                    **topup**: Entire payment credited to account balance
+                    **hybrid**: Reserve for upload + credit excess (DEFAULT)
+
+                    Most x402 clients use "payg" for stateless pay-per-upload.
                   enum: [payg, topup, hybrid]
                   default: hybrid
-                  example: "hybrid"
+                  example: "payg"
+            examples:
+              PaygMode:
+                summary: Pay-as-you-go (most common for x402)
+                value:
+                  paymentHeader: "eyJ4NDAyVmVyc2lvbiI6MSwic2NoZW1lIjoiZXhhY3QiLCJuZXR3b3JrIjoiYmFzZS1tYWlubmV0IiwicGF5bG9hZCI6ey4uLn19"
+                  dataItemId: "QpmY8mZmFEC8RxNsgbxSV6e36OF6quIYaPRKzvUco0o"
+                  byteCount: 1024
+                  mode: "payg"
+              HybridMode:
+                summary: Hybrid (reserve + credit excess)
+                value:
+                  paymentHeader: "eyJ4NDAyVmVyc2lvbiI6MSwic2NoZW1lIjoiZXhhY3QiLCJuZXR3b3JrIjoiYmFzZS1tYWlubmV0IiwicGF5bG9hZCI6ey4uLn19"
+                  dataItemId: "QpmY8mZmFEC8RxNsgbxSV6e36OF6quIYaPRKzvUco0o"
+                  byteCount: 1024
+                  mode: "hybrid"
 
       responses:
         "200":
@@ -1343,10 +1511,36 @@ paths:
       tags:
         - x402
       summary: Finalize x402 payment after upload
-      description: Called by upload service after data item is fully received to compare actual vs declared byte count and detect fraud
+      description: |
+        Finalizes an x402 payment after upload completes by comparing declared vs actual byte count.
+
+        **This is Phase 3 of the x402 flow** - fraud detection and finalization.
+
+        **Called by:** Upload service after data item is fully received and validated.
+
+        **Process:**
+        1. Retrieve payment record by data item ID
+        2. Compare actualByteCount vs declaredByteCount (from X-PAYMENT)
+        3. Apply fraud tolerance threshold (default 5%)
+        4. Determine status: confirmed, refunded, or fraud_penalty
+        5. Issue refund if overpaid (actual < declared)
+        6. Keep payment as penalty if underpaid (actual > declared + tolerance)
+        7. Update payment record with final status
+
+        **Fraud Detection:**
+        - **Within tolerance**: Payment confirmed, upload proceeds
+        - **Overpayment** (actual < declared - 5%): Refund difference to user
+        - **Fraud** (actual > declared + 5%): Keep payment as penalty, reject upload
+
+        **Why this matters:**
+        Users must provide Content-Length header accurately. If they lie about upload size
+        to pay less, the system detects this and penalizes them by keeping the payment.
+
+        **Security:** Prevents users from declaring small uploads but uploading large data.
 
       requestBody:
         required: true
+        description: Actual upload details after data item has been fully received
         content:
           application/json:
             schema:
@@ -1357,12 +1551,33 @@ paths:
               properties:
                 dataItemId:
                   type: string
-                  description: Data item ID that was uploaded
+                  description: Data item ID that was uploaded (links to payment record)
                   example: "QpmY8mZmFEC8RxNsgbxSV6e36OF6quIYaPRKzvUco0o"
                 actualByteCount:
                   type: integer
-                  description: Actual byte count after upload completed
+                  minimum: 1
+                  description: |
+                    Actual byte count after upload completed and data item validated.
+
+                    This is the true size of the ANS-104 data item (headers + payload).
+                    Compared against declaredByteCount from payment verification phase.
                   example: 1024
+            examples:
+              MatchingSize:
+                summary: Actual matches declared (within tolerance)
+                value:
+                  dataItemId: "QpmY8mZmFEC8RxNsgbxSV6e36OF6quIYaPRKzvUco0o"
+                  actualByteCount: 1024
+              Overpayment:
+                summary: Actual less than declared (refund issued)
+                value:
+                  dataItemId: "QpmY8mZmFEC8RxNsgbxSV6e36OF6quIYaPRKzvUco0o"
+                  actualByteCount: 900
+              FraudAttempt:
+                summary: Actual exceeds declared (fraud penalty)
+                value:
+                  dataItemId: "QpmY8mZmFEC8RxNsgbxSV6e36OF6quIYaPRKzvUco0o"
+                  actualByteCount: 1200
 
       responses:
         "200":
