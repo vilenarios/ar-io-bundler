@@ -25,6 +25,7 @@ function buildWalletAddresses(): Record<string, string> {
 
   if (process.env.ARWEAVE_ADDRESS) {
     addresses.arweave = process.env.ARWEAVE_ADDRESS;
+    addresses.ario = process.env.ARWEAVE_ADDRESS; // ARIO uses Arweave addresses
   }
   if (process.env.ETHEREUM_ADDRESS) {
     addresses.ethereum = process.env.ETHEREUM_ADDRESS;
