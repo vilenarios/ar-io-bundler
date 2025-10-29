@@ -93,7 +93,15 @@ export async function createServer(
 
   // CORS handled by nginx reverse proxy
   // app.use(cors({ allowMethods: ["GET", "POST"] }));
-  app.use(bodyParser());
+
+  // Support both JSON and form-urlencoded request bodies
+  app.use(bodyParser({
+    enableTypes: ['json', 'form', 'text'],
+    formLimit: '10mb',
+    jsonLimit: '10mb',
+    textLimit: '10mb',
+  }));
+
   // NOTE: Middleware that use the JWT must handle ctx.state.user being undefined and throw
   // an error if the user is not authenticated
   app.use(jwt({ secret: sharedSecret, passthrough: true }));
