@@ -44,6 +44,7 @@ import { topUp } from "./routes/topUp";
 import { x402FinalizeRoute } from "./routes/x402Finalize";
 import { x402PaymentRoute } from "./routes/x402Payment";
 import { x402PriceRoute } from "./routes/x402Price";
+import { x402TopUpRoute } from "./routes/x402TopUp";
 import { KoaContext } from "./server";
 
 const metricsRegistry = promClient.register;
@@ -135,6 +136,7 @@ router.get("/v1/account/approvals/revoke", revokeApprovals);
 router.get("/v1/x402/price/:signatureType/:address", x402PriceRoute);
 router.post("/v1/x402/payment/:signatureType/:address", x402PaymentRoute);
 router.post("/v1/x402/finalize", x402FinalizeRoute);
+router.post("/v1/x402/top-up/:signatureType/:address", x402TopUpRoute);
 
 // Health
 router.get("/health", async (ctx: KoaContext) => {

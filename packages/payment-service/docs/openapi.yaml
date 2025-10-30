@@ -1603,6 +1603,212 @@ paths:
                 type: string
                 example: "Payment service unavailable"
 
+  /x402/top-up/{signatureType}/{address}:
+    post:
+      tags:
+        - x402
+      summary: Top up credits using x402 payment
+      description: |
+        Top up your account balance by purchasing storage credits with USDC via x402.
+
+        **This is a pure x402 flow** - the resource being purchased is "storage credits."
+
+        **Flow:**
+        1. **First request (no X-PAYMENT header):** Returns 402 Payment Required with payment requirements
+        2. **Retry with X-PAYMENT header:** Verifies payment, settles USDC, credits balance
+
+        **Key Differences from Upload Payment:**
+        - No data item involved - just purchasing credits
+        - Supports multiple signature types (Arweave, Ethereum, Solana)
+        - Entire payment amount converted to credits and added to balance
+        - Can be used for any future uploads
+
+        **Use Case:** AI agents or users who want to prepay for storage using USDC
+
+        **Note:** While x402 currently only supports EVM chains (Base, Ethereum, Polygon),
+        this endpoint accepts signatureType for forward compatibility with future payment methods.
+
+      parameters:
+        - name: signatureType
+          in: path
+          required: true
+          schema:
+            type: integer
+            enum: [1, 3, 4]
+            description: |
+              ANS-104 signature type:
+              - 1: Arweave (RSA-PSS)
+              - 3: Ethereum (ECDSA secp256k1)
+              - 4: Solana (EdDSA ed25519)
+
+              Currently, x402 only supports signatureType 3 (Ethereum), but this parameter
+              is included for forward compatibility.
+            example: 3
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+            description: |
+              User address that will receive the credits. Format depends on signatureType:
+              - signatureType 1: Base64URL Arweave address
+              - signatureType 3: 0x-prefixed Ethereum address (current x402 support)
+              - signatureType 4: Base58 Solana address
+            example: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0"
+
+      requestBody:
+        required: true
+        description: |
+          Request body for top-up. On first request (without X-PAYMENT), this tells the service
+          how many bytes worth of credits you want to purchase.
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - bytes
+              properties:
+                bytes:
+                  type: integer
+                  minimum: 1
+                  description: |
+                    Number of bytes worth of storage credits to purchase.
+
+                    This determines the USDC price. For example:
+                    - 1 GB (1,000,000,000 bytes) might cost ~$0.005 USDC
+                    - 10 GB (10,000,000,000 bytes) might cost ~$0.05 USDC
+
+                    The service calculates: bytes → Winston → USD → USDC
+                  example: 10000000000
+            examples:
+              SmallTopUp:
+                summary: Top up for 1 GB
+                value:
+                  bytes: 1000000000
+              LargeTopUp:
+                summary: Top up for 100 GB
+                value:
+                  bytes: 100000000000
+
+      responses:
+        "402":
+          description: |
+            Payment Required - No X-PAYMENT header provided, or payment verification failed.
+
+            Client should:
+            1. Parse payment requirements from response
+            2. Create EIP-3009 payment authorization
+            3. Sign with EIP-712
+            4. Retry request with X-PAYMENT header
+          headers:
+            X-Payment-Required:
+              schema:
+                type: string
+                example: "x402-1"
+              description: Indicates x402 protocol version 1 is supported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/X402PaymentRequiredResponse"
+              examples:
+                SingleNetwork:
+                  summary: Payment required for 10 GB topup
+                  value:
+                    x402Version: 1
+                    accepts:
+                      - scheme: "exact"
+                        network: "base-mainnet"
+                        maxAmountRequired: "50000"
+                        resource: "/v1/x402/top-up/3/0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0"
+                        description: "Top up storage credits for 10000000000 bytes"
+                        mimeType: "application/json"
+                        outputSchema:
+                          type: "object"
+                          properties:
+                            success:
+                              type: "boolean"
+                            creditsGranted:
+                              type: "string"
+                              description: "Winston credits granted"
+                            balance:
+                              type: "string"
+                              description: "New total balance"
+                            txHash:
+                              type: "string"
+                              description: "Blockchain transaction hash"
+                            paymentId:
+                              type: "string"
+                              description: "Payment ID (UUID)"
+                        payTo: "0x6A0A10FFD285c971B841bee8892878c0d583Bf67"
+                        maxTimeoutSeconds: 300
+                        asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+                        extra:
+                          name: "USD Coin"
+                          version: "2"
+
+        "200":
+          description: |
+            OK - Payment verified, settled, and credits added to balance.
+
+            The entire USDC payment has been converted to Winston credits and
+            credited to the user's account balance.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    description: Whether the top-up succeeded
+                    example: true
+                  creditsGranted:
+                    type: string
+                    description: Amount of Winston credits granted (added to balance)
+                    example: "10000000000"
+                  balance:
+                    type: string
+                    description: New total account balance in Winston
+                    example: "15000000000"
+                  txHash:
+                    type: string
+                    description: Blockchain transaction hash for USDC payment
+                    example: "0xb8a52725cdc816d060392dcecaa1528872acf9ea0bd097a86e2432dd5d2213ca"
+                  paymentId:
+                    type: string
+                    format: uuid
+                    description: Unique payment ID for this transaction
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+                  network:
+                    type: string
+                    description: Network where payment was made
+                    example: "base-mainnet"
+              examples:
+                Successful:
+                  summary: Successfully topped up 10 GB
+                  value:
+                    success: true
+                    creditsGranted: "10000000000"
+                    balance: "15000000000"
+                    txHash: "0xb8a52725cdc816d060392dcecaa1528872acf9ea0bd097a86e2432dd5d2213ca"
+                    paymentId: "550e8400-e29b-41d4-a716-446655440000"
+                    network: "base-mainnet"
+
+        "400":
+          description: Bad Request
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Invalid bytes parameter"
+
+        "503":
+          description: Service Unavailable
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "x402 payments are not currently available"
+
   /info:
     get:
       tags:
