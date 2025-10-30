@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AR.IO x402 Raw Upload</title>
+  <title>AR.IO x402 Upload - Turbo Bundler</title>
   <link rel="icon" type="image/png" id="favicon">
   <script>
     // Set favicon dynamically based on current gateway
@@ -18,151 +18,280 @@
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.10.0/dist/ethers.umd.min.js"></script>
+  <script src="https://unpkg.com/@dha-team/arbundles@1.0.4/build/web/bundle.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --canvas: #171717;
+      --surface: #1F1F1F;
+      --default: #333;
+      --fg-muted: #ededed;
+      --link: #A3A3AD;
+      --turbo-red: #FE0230;
+      --turbo-green: #18A957;
+      --turbo-blue: #3142C4;
+      --turbo-yellow: #FFBB38;
+    }
+
     body {
       font-family: 'Rubik', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       max-width: 1000px;
       margin: 0 auto;
       padding: 40px 20px;
-      background: #171717;
-      color: #EDEDED;
+      background: var(--canvas);
+      color: var(--fg-muted);
       line-height: 1.6;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
+
     .container {
-      background: #232323;
+      background: var(--surface);
       padding: 40px;
       border-radius: 12px;
-      border: 1px solid #333333;
+      border: 1px solid var(--default);
       box-shadow: 0 8px 20px rgba(0,0,0,0.6);
     }
+
     h1 {
-      color: #EDEDED;
-      border-bottom: 2px solid #FE0230;
-      padding-bottom: 16px;
+      color: var(--fg-muted);
+      font-size: 2rem;
+      font-weight: 700;
       margin-bottom: 24px;
-      font-size: 32px;
-      font-weight: 600;
     }
-    .badge {
-      background: #FE0230;
-      color: white;
-      padding: 6px 14px;
-      border-radius: 6px;
-      font-size: 13px;
+
+    /* Mode Selector Tabs */
+    .mode-selector {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 24px;
+      border-bottom: 1px solid var(--default);
+      padding-bottom: 0;
+    }
+
+    .mode-tab {
+      padding: 12px 24px;
+      background: transparent;
+      border: none;
+      border-bottom: 3px solid transparent;
+      color: var(--link);
+      font-size: 1rem;
       font-weight: 500;
-      margin-left: 12px;
+      font-family: 'Rubik', sans-serif;
+      cursor: pointer;
+      transition: color 150ms, border-color 150ms;
+      margin-bottom: -1px;
+    }
+
+    .mode-tab:hover {
+      color: var(--fg-muted);
+      border-bottom-color: rgba(254, 2, 48, 0.3);
+    }
+
+    .mode-tab.active {
+      color: var(--turbo-red);
+      border-bottom-color: var(--turbo-red);
+      font-weight: 700;
+    }
+
+    .badge {
       display: inline-block;
+      background: var(--turbo-red);
+      color: white;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      margin-left: 8px;
+      vertical-align: middle;
     }
+
+    /* Info sections with gradient */
     .info {
-      background: rgba(254, 2, 48, 0.1);
-      border: 1px solid rgba(254, 2, 48, 0.3);
-      border-left: 4px solid #FE0230;
-      padding: 20px;
+      background: linear-gradient(to bottom right, rgba(254, 2, 48, 0.05), rgba(254, 2, 48, 0.03));
+      border: 1px solid rgba(254, 2, 48, 0.2);
+      border-left: 4px solid var(--turbo-red);
+      padding: 24px;
       margin: 24px 0;
-      border-radius: 8px;
+      border-radius: 12px;
     }
-    .info strong { color: #FE0230; font-weight: 600; }
-    .info p { margin: 8px 0; }
+
+    .info strong { color: var(--turbo-red); font-weight: 700; }
+    .info p { margin: 8px 0; color: var(--fg-muted); font-size: 0.875rem; }
     .info ul { margin: 12px 0 0 20px; }
-    .info li { margin: 6px 0; }
+    .info li { margin: 6px 0; font-size: 0.875rem; }
+
+    /* Steps with gradient */
     .step {
       margin: 24px 0;
-      padding: 20px;
-      background: rgba(51, 51, 51, 0.5);
-      border: 1px solid #333333;
-      border-left: 4px solid #3142C4;
-      border-radius: 8px;
+      padding: 24px;
+      background: linear-gradient(to bottom right, rgba(254, 2, 48, 0.05), rgba(254, 2, 48, 0.03));
+      border: 1px solid rgba(254, 2, 48, 0.2);
+      border-radius: 12px;
     }
+
     .step h3 {
       margin-top: 0;
       margin-bottom: 12px;
-      color: #EDEDED;
-      font-size: 20px;
-      font-weight: 600;
+      color: var(--fg-muted);
+      font-size: 1.125rem;
+      font-weight: 700;
     }
-    .step p { margin: 8px 0; color: #999; font-size: 14px; }
+
+    .step p { margin: 8px 0; color: var(--link); font-size: 0.875rem; }
+
+    /* Primary buttons - Turbo Red */
     button {
-      background: #FE0230;
+      background: var(--turbo-red);
       color: white;
       border: none;
-      padding: 14px 28px;
-      font-size: 16px;
-      font-weight: 500;
+      padding: 16px 24px;
+      font-size: 1.125rem;
+      font-weight: 700;
       font-family: 'Rubik', sans-serif;
       border-radius: 8px;
       cursor: pointer;
       margin: 12px 8px 12px 0;
-      transition: all 0.2s ease;
+      transition: background-color 150ms;
     }
-    button:hover { background: #d40228; transform: translateY(-1px); }
-    button:active { transform: translateY(0); }
-    button:disabled { background: #404144; color: #999; cursor: not-allowed; transform: none; }
-    button[style*="background: #6c757d"] { background: #555 !important; }
-    button[style*="background: #6c757d"]:hover { background: #666 !important; }
-    button[style*="background: #dc3545"] { background: #8B5CF6 !important; }
-    button[style*="background: #dc3545"]:hover { background: #7c3aed !important; }
-    .log {
-      background: #0a0a0a;
-      color: #d4d4d4;
-      padding: 20px;
-      border-radius: 8px;
-      border: 1px solid #333333;
-      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Monaco, 'Courier New', monospace;
-      font-size: 13px;
-      max-height: 500px;
-      overflow-y: auto;
-      margin: 20px 0;
+
+    button:hover { background: rgba(254, 2, 48, 0.9); }
+    button:active { background: #d40228; }
+    button:disabled {
+      background: #404144;
+      color: #999;
+      cursor: not-allowed;
+      opacity: 0.5;
     }
-    .log-success { color: #18A957; }
-    .log-red { color: #FE0230; }
-    .log-error { color: #FE0230; }
-    .log-info { color: #3142C4; }
-    .log-warning { color: #FFBB38; }
+
+    /* Secondary buttons */
+    .btn-secondary {
+      background: var(--surface);
+      border: 1px solid var(--default);
+      color: var(--fg-muted);
+      padding: 12px 20px;
+      font-size: 0.875rem;
+    }
+
+    .btn-secondary:hover {
+      background: var(--canvas);
+    }
+
+    .btn-danger {
+      background: #8B5CF6 !important;
+    }
+
+    .btn-danger:hover {
+      background: #7c3aed !important;
+    }
+
+    /* Config section */
     .config {
-      background: rgba(49, 66, 196, 0.1);
-      border: 1px solid rgba(49, 66, 196, 0.3);
-      padding: 20px;
-      border-radius: 8px;
+      background: linear-gradient(to bottom right, rgba(49, 66, 196, 0.05), rgba(49, 66, 196, 0.03));
+      border: 1px solid rgba(49, 66, 196, 0.2);
+      padding: 24px;
+      border-radius: 12px;
       margin: 24px 0;
     }
-    .config h3 { margin-top: 0; margin-bottom: 16px; color: #EDEDED; font-weight: 600; }
-    .config label { display: block; margin: 12px 0; color: #EDEDED; font-weight: 500; font-size: 14px; }
+
+    .config h3 {
+      margin-top: 0;
+      margin-bottom: 16px;
+      color: var(--fg-muted);
+      font-weight: 700;
+    }
+
+    .config label {
+      display: block;
+      margin: 12px 0;
+      color: var(--fg-muted);
+      font-weight: 500;
+      font-size: 0.875rem;
+    }
+
+    /* Inputs */
     input[type="text"],
     input[type="file"],
     select {
       width: 100%;
       margin: 8px 0;
       padding: 12px;
-      background: #0a0a0a;
-      border: 1px solid #333333;
-      border-radius: 6px;
-      color: #EDEDED;
+      background: var(--canvas);
+      border: 1px solid var(--default);
+      border-radius: 8px;
+      color: var(--fg-muted);
       font-family: 'Rubik', sans-serif;
-      font-size: 14px;
+      font-size: 0.875rem;
+      transition: border-color 150ms;
     }
+
     input[type="text"]:focus,
     select:focus {
       outline: none;
-      border-color: #FE0230;
+      border-color: var(--turbo-red);
     }
+
     input::placeholder { color: #666; }
-    .tag-row { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
+
+    /* Log console */
+    .log {
+      background: #0a0a0a;
+      color: #d4d4d4;
+      padding: 20px;
+      border-radius: 12px;
+      border: 1px solid var(--default);
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Monaco, 'Courier New', monospace;
+      font-size: 13px;
+      max-height: 500px;
+      overflow-y: auto;
+      margin: 20px 0;
+    }
+
+    .log-success { color: var(--turbo-green); }
+    .log-error { color: var(--turbo-red); }
+    .log-info { color: var(--turbo-blue); }
+    .log-warning { color: var(--turbo-yellow); }
+
+    /* Tag rows */
+    .tag-row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
     .tag-row input { margin: 0; }
-    #walletInfo p { margin: 8px 0; }
-    #fileInfo p { margin: 8px 0; }
-    .hidden { display: none !important; }
+
+    #walletInfo p,
+    #fileInfo p {
+      margin: 8px 0;
+    }
+
+    /* Hidden content */
+    .hidden {
+      display: none !important;
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>🚀 AR.IO Raw Upload <span class="badge">SIMPLEST</span></h1>
+    <h1>🚀 AR.IO x402 Upload</h1>
 
-    <div class="info">
+    <!-- Mode Selector -->
+    <div class="mode-selector">
+      <button class="mode-tab active" data-mode="raw" onclick="switchMode('raw')">
+        Raw Upload <span class="badge">SIMPLEST</span>
+      </button>
+      <button class="mode-tab" data-mode="signed" onclick="switchMode('signed')">
+        Signed Data Item <span class="badge">ADVANCED</span>
+      </button>
+    </div>
+
+    <!-- Raw Upload Info -->
+    <div id="info-raw" class="info">
       <strong>✨ Simplest x402 Upload</strong>
       <p>Upload raw files directly to Arweave with USDC payment.</p>
       <p><strong>No data item signing required!</strong> Just select a file and upload.</p>
@@ -172,7 +301,23 @@
         <li>Retry upload with payment → Server accepts and creates data item</li>
         <li>Direct raw file upload (no ANS-104 wrapping needed)</li>
       </ul>
-      <p style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(254, 2, 48, 0.3);"><strong>⚠️ Provenance Note:</strong> With raw upload, the data item is <strong>signed by the bundler</strong>, not your wallet. This means <strong>no cryptographic proof of authorship</strong> — anyone could have uploaded this data. For verifiable provenance, use the <em>Signed Data Item</em> upload method.</p>
+      <p style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(254, 2, 48, 0.3);"><strong>⚠️ Provenance Note:</strong> With raw upload, the data item is <strong>signed by the bundler</strong>, not your wallet. This means <strong>no cryptographic proof of authorship</strong> — anyone could have uploaded this data. For verifiable provenance, use the <em>Signed Data Item</em> mode.</p>
+    </div>
+
+    <!-- Signed Data Item Info -->
+    <div id="info-signed" class="info hidden">
+      <strong>✨ Advanced x402 Upload</strong>
+      <p>Create and sign your own ANS-104 data item before uploading to Arweave with USDC payment.</p>
+      <p><strong>Full control over data item signing!</strong> You sign the data item with your MetaMask wallet.</p>
+      <ul>
+        <li>Create ANS-104 data item with custom tags and metadata</li>
+        <li>Sign data item with your Ethereum wallet (MetaMask)</li>
+        <li>Upload signed data item → Get 402 Payment Required with exact price</li>
+        <li>Sign USDC payment authorization in MetaMask</li>
+        <li>Retry upload with payment → Server accepts your signed data item</li>
+        <li>Full ownership and control of the data item signature</li>
+      </ul>
+      <p style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(254, 2, 48, 0.3);"><strong>✅ Provenance Guarantee:</strong> With signed data item upload, <strong>YOU sign the data item</strong> with your wallet before uploading. This provides <strong>cryptographic proof of authorship</strong> — the data item is permanently linked to your wallet address, proving you created it. This is verifiable on-chain forever.</p>
     </div>
 
     <div class="config">
@@ -194,7 +339,7 @@
     <div class="step">
       <h3>Step 1: Connect Wallet</h3>
       <button id="connectBtn">Connect MetaMask</button>
-      <button id="addUsdcBtn" style="background: #6c757d;" disabled>Add USDC to MetaMask</button>
+      <button id="addUsdcBtn" class="btn-secondary" disabled>Add USDC to MetaMask</button>
       <div id="walletInfo"></div>
     </div>
 
@@ -206,14 +351,14 @@
 
     <div class="step">
       <h3>Step 3: Custom Tags (Optional)</h3>
-      <p style="font-size: 13px; color: #666;">Add custom metadata tags via X-Tag-* headers</p>
+      <p>Add custom metadata tags to your upload</p>
       <div id="tagsContainer">
         <div class="tag-row">
           <input type="text" placeholder="Tag name" class="tag-name" style="width: 200px;">
           <input type="text" placeholder="Tag value" class="tag-value" style="width: 300px;">
         </div>
       </div>
-      <button id="addTagBtn" style="background: #6c757d; font-size: 14px; padding: 8px 16px;">+ Add Another Tag</button>
+      <button id="addTagBtn" class="btn-secondary">+ Add Another Tag</button>
     </div>
 
     <div class="step">
@@ -222,12 +367,12 @@
     </div>
 
     <!-- Upload Results -->
-    <div id="uploadResults" class="hidden" style="margin: 24px 0; padding: 24px; background: linear-gradient(to bottom right, rgba(24, 169, 87, 0.1), rgba(24, 169, 87, 0.05)); border: 1px solid rgba(24, 169, 87, 0.3); border-left: 4px solid #18A957; border-radius: 12px;">
-      <h3 style="color: #18A957; margin: 0 0 16px 0; font-weight: 700;">✅ Upload Successful!</h3>
-      <div style="background: #171717; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
-        <p style="font-size: 0.875rem; color: #A3A3AD; margin-bottom: 8px;">Transaction ID:</p>
-        <p id="resultId" style="font-family: monospace; font-size: 0.875rem; word-break: break-all; margin-bottom: 12px; color: #EDEDED;"></p>
-        <a id="resultLink" href="#" target="_blank" style="display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; background: #FE0230; color: white; text-decoration: none; border-radius: 8px; font-weight: 700; transition: background-color 150ms;">
+    <div id="uploadResults" class="hidden" style="margin: 24px 0; padding: 24px; background: linear-gradient(to bottom right, rgba(24, 169, 87, 0.1), rgba(24, 169, 87, 0.05)); border: 1px solid rgba(24, 169, 87, 0.3); border-left: 4px solid var(--turbo-green); border-radius: 12px;">
+      <h3 style="color: var(--turbo-green); margin: 0 0 16px 0;">✅ Upload Successful!</h3>
+      <div style="background: var(--canvas); padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+        <p style="font-size: 0.875rem; color: var(--link); margin-bottom: 8px;">Transaction ID:</p>
+        <p id="resultId" style="font-family: monospace; font-size: 0.875rem; word-break: break-all; margin-bottom: 12px;"></p>
+        <a id="resultLink" href="#" target="_blank" style="display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; background: var(--turbo-red); color: white; text-decoration: none; border-radius: 8px; font-weight: 700; transition: background-color 150ms;">
           <span>View on Arweave</span>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
@@ -237,10 +382,10 @@
         </a>
       </div>
       <div id="resultDetails" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; font-size: 0.875rem;"></div>
-      <button onclick="resetUpload()" style="margin-top: 16px; background: #1F1F1F; border: 1px solid #333; color: #EDEDED; padding: 10px 20px; font-size: 0.875rem; cursor: pointer; border-radius: 8px;">Upload Another File</button>
+      <button onclick="resetUpload()" style="margin-top: 16px; background: var(--surface); border: 1px solid var(--default); color: var(--fg-muted); padding: 10px 20px; font-size: 0.875rem;">Upload Another File</button>
     </div>
 
-    <h3>📋 Log</h3>
+    <h3 style="margin-top: 40px;">📋 Log</h3>
     <div class="log" id="log"></div>
   </div>
 
@@ -249,6 +394,7 @@
     let signer;
     let userAddress;
     let selectedFile;
+    let currentMode = 'raw'; // 'raw' or 'signed'
     let paidUsdcAmount = null; // Store USDC amount paid
 
     const NETWORK_CONFIG = {
@@ -264,6 +410,30 @@
       },
     };
 
+    function switchMode(mode) {
+      currentMode = mode;
+
+      // Update tab styling
+      document.querySelectorAll('.mode-tab').forEach(tab => {
+        if (tab.dataset.mode === mode) {
+          tab.classList.add('active');
+        } else {
+          tab.classList.remove('active');
+        }
+      });
+
+      // Show/hide info sections
+      if (mode === 'raw') {
+        document.getElementById('info-raw').classList.remove('hidden');
+        document.getElementById('info-signed').classList.add('hidden');
+      } else {
+        document.getElementById('info-raw').classList.add('hidden');
+        document.getElementById('info-signed').classList.remove('hidden');
+      }
+
+      log(`Switched to ${mode === 'raw' ? 'Raw Upload' : 'Signed Data Item'} mode`, 'info');
+    }
+
     function log(message, type = 'info') {
       const logDiv = document.getElementById('log');
       const entry = document.createElement('div');
@@ -274,7 +444,6 @@
       console.log(message);
     }
 
-    // Simple MetaMask detection on page load
     window.addEventListener('load', () => {
       log('Page loaded', 'info');
       if (!window.ethereum) {
@@ -291,23 +460,20 @@
     document.getElementById('connectBtn').addEventListener('click', async () => {
       try {
         if (!window.ethereum) {
-          alert('MetaMask not found!\n\n1. Install MetaMask from https://metamask.io\n2. Access this page via http:// (not file://)');
+          alert('MetaMask not found!\\n\\n1. Install MetaMask from https://metamask.io\\n2. Access this page via http:// (not file://)');
           return;
         }
 
         log('Requesting MetaMask connection...', 'info');
 
-        // Request accounts
         const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
         userAddress = accounts[0];
 
-        // Create ethers provider
         provider = new ethers.BrowserProvider(window.ethereum);
         signer = await provider.getSigner();
 
         log(`✅ Connected: ${userAddress}`, 'success');
 
-        // Check network
         const networkKey = document.getElementById('network').value;
         const config = NETWORK_CONFIG[networkKey];
         const network = await provider.getNetwork();
@@ -327,7 +493,6 @@
           }
         }
 
-        // Check USDC balance
         const usdcContract = new ethers.Contract(
           config.usdcAddress,
           ['function balanceOf(address) view returns (uint256)'],
@@ -348,7 +513,6 @@
           document.getElementById('uploadBtn').disabled = false;
         }
 
-        // Enable "Add USDC" button
         document.getElementById('addUsdcBtn').disabled = false;
 
       } catch (error) {
@@ -396,7 +560,6 @@
       }
     });
 
-    // Add tag row button
     document.getElementById('addTagBtn').addEventListener('click', () => {
       const container = document.getElementById('tagsContainer');
       const newRow = document.createElement('div');
@@ -405,10 +568,44 @@
       newRow.innerHTML = `
         <input type="text" placeholder="Tag name" class="tag-name" style="width: 200px;">
         <input type="text" placeholder="Tag value" class="tag-value" style="width: 300px;">
-        <button onclick="this.parentElement.remove()" style="background: #dc3545; padding: 8px 12px; font-size: 14px;">Remove</button>
+        <button onclick="this.parentElement.remove()" class="btn-danger" style="padding: 8px 12px; font-size: 14px;">Remove</button>
       `;
       container.appendChild(newRow);
     });
+
+    // MetaMask signer for arbundles (used in signed mode)
+    class MetaMaskSigner {
+      constructor(ethersSigner, address) {
+        this.signer = ethersSigner;
+        this.address = address;
+        this.signatureType = 3;
+        this.signatureLength = 65;
+        this.ownerLength = 65;
+        this.publicKey = null;
+      }
+
+      async setPublicKey() {
+        if (!this.publicKey) {
+          const message = 'Derive public key for Arbundles';
+          const signature = await this.signer.signMessage(message);
+          const messageHash = ethers.hashMessage(message);
+          const recoveredPublicKey = ethers.SigningKey.recoverPublicKey(messageHash, signature);
+          const publicKeyHex = recoveredPublicKey.slice(2);
+          const bytes = new Uint8Array(publicKeyHex.length / 2);
+          for (let i = 0; i < publicKeyHex.length; i += 2) {
+            bytes[i / 2] = parseInt(publicKeyHex.substr(i, 2), 16);
+          }
+          this.publicKey = bytes;
+          log(`Public key derived: ${this.publicKey.length} bytes`, 'info');
+        }
+      }
+
+      async sign(message) {
+        await this.setPublicKey();
+        const signature = await this.signer.signMessage(message);
+        return new Uint8Array(ethers.getBytes(signature));
+      }
+    }
 
     document.getElementById('uploadBtn').addEventListener('click', async () => {
       if (!selectedFile || !signer) {
@@ -420,43 +617,89 @@
 
       try {
         const uploadUrl = document.getElementById('uploadUrl').value;
-        const paymentUrl = document.getElementById('paymentUrl').value;
 
-        // Step 1: Read file as raw bytes
+        // Read file
         log('Reading file...', 'info');
         const fileBuffer = await selectedFile.arrayBuffer();
         const fileData = new Uint8Array(fileBuffer);
-
         log(`File read: ${fileData.length} bytes`, 'info');
 
-        // Collect custom tags from form
-        const customHeaders = {};
-        const tagRows = document.querySelectorAll('.tag-row');
-        let customTagCount = 0;
-        tagRows.forEach(row => {
-          const nameInput = row.querySelector('.tag-name');
-          const valueInput = row.querySelector('.tag-value');
-          if (nameInput && valueInput && nameInput.value.trim() && valueInput.value.trim()) {
-            const headerName = `X-Tag-${nameInput.value.trim().replace(/\s+/g, '-')}`;
-            customHeaders[headerName] = valueInput.value.trim();
-            log(`Will add tag: ${nameInput.value.trim()} = ${valueInput.value.trim()}`, 'info');
-            customTagCount++;
+        // Prepare data to upload
+        let uploadData;
+        let contentType;
+        let customHeaders = {};
+
+        if (currentMode === 'raw') {
+          // RAW UPLOAD MODE
+          log('Mode: Raw Upload - server will sign data item', 'info');
+          uploadData = fileData;
+          contentType = selectedFile.type || 'application/octet-stream';
+
+          // Collect custom tags as headers
+          const tagRows = document.querySelectorAll('.tag-row');
+          let customTagCount = 0;
+          tagRows.forEach(row => {
+            const nameInput = row.querySelector('.tag-name');
+            const valueInput = row.querySelector('.tag-value');
+            if (nameInput && valueInput && nameInput.value.trim() && valueInput.value.trim()) {
+              const headerName = `X-Tag-${nameInput.value.trim().replace(/\\s+/g, '-')}`;
+              customHeaders[headerName] = valueInput.value.trim();
+              log(`Will add tag: ${nameInput.value.trim()} = ${valueInput.value.trim()}`, 'info');
+              customTagCount++;
+            }
+          });
+          if (customTagCount > 0) {
+            log(`✅ ${customTagCount} custom tag(s) will be included`, 'success');
           }
-        });
-        if (customTagCount > 0) {
-          log(`✅ ${customTagCount} custom tag(s) will be included`, 'success');
+        } else {
+          // SIGNED DATA ITEM MODE
+          log('Mode: Signed Data Item - you sign with your wallet', 'info');
+          log('Creating ANS-104 data item...', 'info');
+
+          const dataSigner = new MetaMaskSigner(signer, userAddress);
+          await dataSigner.setPublicKey();
+
+          const tags = [
+            { name: 'Content-Type', value: selectedFile.type || 'application/octet-stream' },
+            { name: 'File-Name', value: selectedFile.name }
+          ];
+
+          // Add custom tags
+          const tagRows = document.querySelectorAll('.tag-row');
+          let customTagCount = 0;
+          tagRows.forEach(row => {
+            const nameInput = row.querySelector('.tag-name');
+            const valueInput = row.querySelector('.tag-value');
+            if (nameInput && valueInput && nameInput.value.trim() && valueInput.value.trim()) {
+              tags.push({ name: nameInput.value.trim(), value: valueInput.value.trim() });
+              log(`Added tag: ${nameInput.value.trim()} = ${valueInput.value.trim()}`, 'info');
+              customTagCount++;
+            }
+          });
+          if (customTagCount > 0) {
+            log(`✅ Added ${customTagCount} custom tag(s)`, 'success');
+          }
+
+          const dataItem = window.arbundles.createData(fileData, dataSigner, { tags });
+
+          log('Signing data item (approve in MetaMask)...', 'info');
+          await dataItem.sign(dataSigner);
+
+          uploadData = dataItem.getRaw();
+          contentType = 'application/octet-stream';
+          log(`✅ Data item signed! ID: ${await dataItem.id}`, 'success');
         }
 
-        // Step 2: Try upload first
+        // Try upload first
         log('Attempting upload...', 'info');
         let uploadResponse = await fetch(`${uploadUrl}/v1/tx`, {
           method: 'POST',
           headers: {
-            'Content-Type': selectedFile.type || 'application/octet-stream',
-            'Content-Length': fileData.length.toString(),
+            'Content-Type': contentType,
+            'Content-Length': uploadData.length.toString(),
             ...customHeaders,
           },
-          body: fileData
+          body: uploadData
         });
 
         let result;
@@ -472,32 +715,28 @@
         else if (uploadResponse.status === 402) {
           log('💳 402 Payment Required - wallet has no credits, x402 payment needed', 'warning');
           const priceData = await uploadResponse.json();
-          log('✅ Received price quote from upload service', 'success');
+          log('✅ Received price quote from server', 'success');
           log(`Quote details: ${JSON.stringify(priceData, null, 2)}`, 'info');
 
-          // Step 3: Create payment authorization from upload service's quote
+          // Create payment authorization
           const networkKey = document.getElementById('network').value;
           const config = NETWORK_CONFIG[networkKey];
-
           const requirements = priceData.accepts.find(a => a.network === networkKey);
+
           if (!requirements) {
             throw new Error(`Network ${networkKey} not available`);
           }
 
-          // Add small buffer to handle price fluctuations and calculation differences
           const baseAmount = BigInt(requirements.maxAmountRequired);
-          const bufferedAmount = (baseAmount * BigInt(101)) / BigInt(100); // 1% buffer
+          const bufferedAmount = (baseAmount * BigInt(101)) / BigInt(100);
           const amount = ethers.formatUnits(bufferedAmount, 6);
           paidUsdcAmount = amount; // Store for results display
           log(`💰 Payment required: ${amount} USDC (base: ${ethers.formatUnits(baseAmount, 6)} + 1% buffer)`, 'warning');
 
-          // Create EIP-712 payment authorization with proper timestamps
           const currentTime = Math.floor(Date.now() / 1000);
-          const validAfter = currentTime - 3600; // 1 hour ago for clock skew tolerance
-
-          // Use the server's maxTimeoutSeconds + buffer for network/processing delays
+          const validAfter = currentTime - 3600;
           const timeoutSeconds = requirements.maxTimeoutSeconds || 3600;
-          const bufferSeconds = 120; // 2 minute buffer for network delays and processing
+          const bufferSeconds = 120;
           const validBefore = currentTime + timeoutSeconds + bufferSeconds;
 
           log(`Payment window: ${validAfter} to ${validBefore} (timeout: ${timeoutSeconds}s + buffer: ${bufferSeconds}s)`, 'info');
@@ -537,24 +776,24 @@
 
           const paymentPayload = {
             x402Version: 1,
-            scheme: 'exact',  // x402 standard scheme name (EIP-3009 implementation)
+            scheme: 'exact',
             network: networkKey,
             payload: { signature, authorization },
           };
 
           const paymentHeader = btoa(JSON.stringify(paymentPayload));
 
-          // Step 4: Retry upload with payment
+          // Retry upload with payment
           log('Retrying upload with payment...', 'info');
           uploadResponse = await fetch(`${uploadUrl}/v1/tx`, {
             method: 'POST',
             headers: {
-              'Content-Type': selectedFile.type || 'application/octet-stream',
-              'Content-Length': fileData.length.toString(),
+              'Content-Type': contentType,
+              'Content-Length': uploadData.length.toString(),
               'X-PAYMENT': paymentHeader,
               ...customHeaders,
             },
-            body: fileData
+            body: uploadData
           });
 
           if (!uploadResponse.ok) {
@@ -573,12 +812,11 @@
         log(`📄 Data Item ID: ${result.id}`, 'success');
 
         // Use dataCaches from response to generate dynamic gateway link
-        let gatewayHost = 'arweave.net'; // fallback
+        let gatewayHost = 'arweave.net';
         if (result.dataCaches && result.dataCaches.length > 0) {
-          // Try to match current page's hostname with dataCaches
           const currentHost = window.location.hostname;
           const matchingCache = result.dataCaches.find(cache => cache === currentHost);
-          gatewayHost = matchingCache || result.dataCaches[0]; // Use matching or first available
+          gatewayHost = matchingCache || result.dataCaches[0];
         }
 
         const txUrl = `https://${gatewayHost}/${result.id}`;
@@ -591,13 +829,13 @@
         document.getElementById('resultLink').href = txUrl;
 
         let detailsHtml = `
-          <div style="padding: 12px; background: #1F1F1F; border-radius: 8px;">
-            <strong style="color: #A3A3AD; display: block; margin-bottom: 6px;">Owner:</strong>
-            <span style="font-family: monospace; font-size: 0.75rem; color: #EDEDED; word-break: break-all;">${result.owner}</span>
+          <div style="padding: 12px; background: var(--surface); border-radius: 8px;">
+            <strong style="color: var(--link); display: block; margin-bottom: 6px;">Owner:</strong>
+            <span style="font-family: monospace; font-size: 0.75rem; color: var(--fg-muted); word-break: break-all;">${result.owner}</span>
           </div>
-          <div style="padding: 12px; background: #1F1F1F; border-radius: 8px;">
-            <strong style="color: #A3A3AD; display: block; margin-bottom: 6px;">Payer:</strong>
-            <span style="font-family: monospace; font-size: 0.75rem; color: #EDEDED; word-break: break-all;">${result.payer}</span>
+          <div style="padding: 12px; background: var(--surface); border-radius: 8px;">
+            <strong style="color: var(--link); display: block; margin-bottom: 6px;">Payer:</strong>
+            <span style="font-family: monospace; font-size: 0.75rem; color: var(--fg-muted); word-break: break-all;">${result.payer}</span>
           </div>
         `;
 
@@ -607,9 +845,9 @@
           log(`📊 Deadline Height: ${result.receipt.deadlineHeight}`, 'info');
 
           detailsHtml += `
-            <div style="padding: 12px; background: #1F1F1F; border-radius: 8px;">
-              <strong style="color: #A3A3AD; display: block; margin-bottom: 6px;">Storage Cost:</strong>
-              <span style="color: #EDEDED;">${result.receipt.winc} Winston</span>
+            <div style="padding: 12px; background: var(--surface); border-radius: 8px;">
+              <strong style="color: var(--link); display: block; margin-bottom: 6px;">Storage Cost:</strong>
+              <span style="color: var(--fg-muted);">${result.receipt.winc} Winston</span>
             </div>
           `;
         }
@@ -617,30 +855,29 @@
         // Display USDC cost or credit usage
         if (paidUsdcAmount) {
           detailsHtml += `
-            <div style="padding: 12px; background: #1F1F1F; border-radius: 8px;">
-              <strong style="color: #A3A3AD; display: block; margin-bottom: 6px;">USDC Paid:</strong>
-              <span style="color: #18A957; font-weight: 700;">${paidUsdcAmount} USDC</span>
+            <div style="padding: 12px; background: var(--surface); border-radius: 8px;">
+              <strong style="color: var(--link); display: block; margin-bottom: 6px;">USDC Paid:</strong>
+              <span style="color: var(--turbo-green); font-weight: 700;">${paidUsdcAmount} USDC</span>
             </div>
           `;
         } else {
           detailsHtml += `
-            <div style="padding: 12px; background: #1F1F1F; border-radius: 8px;">
-              <strong style="color: #A3A3AD; display: block; margin-bottom: 6px;">Payment Method:</strong>
-              <span style="color: #18A957; font-weight: 700;">Existing Credits</span>
+            <div style="padding: 12px; background: var(--surface); border-radius: 8px;">
+              <strong style="color: var(--link); display: block; margin-bottom: 6px;">Payment Method:</strong>
+              <span style="color: var(--turbo-green); font-weight: 700;">Existing Credits</span>
             </div>
           `;
         }
 
         if (result.receipt) {
           detailsHtml += `
-            <div style="padding: 12px; background: #1F1F1F; border-radius: 8px;">
-              <strong style="color: #A3A3AD; display: block; margin-bottom: 6px;">Timestamp:</strong>
-              <span style="color: #EDEDED;">${new Date(result.receipt.timestamp).toLocaleString()}</span>
+            <div style="padding: 12px; background: var(--surface); border-radius: 8px;">
+              <strong style="color: var(--link); display: block; margin-bottom: 6px;">Timestamp:</strong>
+              <span style="color: var(--fg-muted);">${new Date(result.receipt.timestamp).toLocaleString()}</span>
             </div>
           `;
         }
 
-        // Read x402 payment info from response body
         if (result.x402Payment) {
           log(`💳 Payment TX: ${result.x402Payment.transactionHash}`, 'success');
           log(`🌐 Network: ${result.x402Payment.network}`, 'info');
@@ -648,13 +885,13 @@
           log(`🆔 Payment ID: ${result.x402Payment.paymentId}`, 'info');
 
           detailsHtml += `
-            <div style="padding: 12px; background: #1F1F1F; border-radius: 8px;">
-              <strong style="color: #A3A3AD; display: block; margin-bottom: 6px;">Payment Network:</strong>
-              <span style="color: #EDEDED;">${result.x402Payment.network}</span>
+            <div style="padding: 12px; background: var(--surface); border-radius: 8px;">
+              <strong style="color: var(--link); display: block; margin-bottom: 6px;">Payment Network:</strong>
+              <span style="color: var(--fg-muted);">${result.x402Payment.network}</span>
             </div>
-            <div style="padding: 12px; background: #1F1F1F; border-radius: 8px;">
-              <strong style="color: #A3A3AD; display: block; margin-bottom: 6px;">Payment Mode:</strong>
-              <span style="color: #EDEDED;">${result.x402Payment.mode}</span>
+            <div style="padding: 12px; background: var(--surface); border-radius: 8px;">
+              <strong style="color: var(--link); display: block; margin-bottom: 6px;">Payment Mode:</strong>
+              <span style="color: var(--fg-muted);">${result.x402Payment.mode}</span>
             </div>
           `;
         }
@@ -678,7 +915,6 @@
       document.getElementById('fileInput').value = '';
       document.getElementById('fileInfo').innerHTML = '';
       selectedFile = null;
-      paidUsdcAmount = null;
       document.getElementById('uploadBtn').disabled = true;
       log('Ready for new upload', 'info');
     }
