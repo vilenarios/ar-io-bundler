@@ -37,5 +37,5 @@ export function swaggerDocsJSON(ctx: KoaContext, next: Next) {
 
 export const swaggerDocs = koaSwagger({
   routePrefix: false,
-  swaggerOptions: { spec: loadSwaggerYAML() },
+  swaggerOptions: { url: '/openapi.json' },
 });
