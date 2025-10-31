@@ -100,6 +100,12 @@ export async function seedBundleHandler(
   logger.info("Finished uploading chunks.", { bundleToSeed });
 
   await database.insertSeededBundle(bundleId);
+
+  // Enqueue verify job to confirm bundle was mined and move to permanent storage
+  const { enqueue } = await import("../arch/queues");
+  const { jobLabels } = await import("../constants");
+  await enqueue(jobLabels.verifyBundle, { planId });
+  logger.info("Enqueued verify job", { planId });
 }
 
 // Legacy SQS handler - now using BullMQ workers in src/workers/allWorkers.ts
