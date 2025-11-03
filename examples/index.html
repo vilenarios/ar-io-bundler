@@ -53,6 +53,23 @@
       border-radius: 5px;
       margin: 20px 0;
     }
+    .info-box {
+      background: #d1ecf1;
+      border: 1px solid #0070f3;
+      border-left: 4px solid #0070f3;
+      padding: 15px;
+      border-radius: 5px;
+      margin: 20px 0;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .info-box strong {
+      color: #0056b3;
+    }
+    .info-box .highlight {
+      color: #28a745;
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
@@ -105,8 +122,13 @@ node x402-upload-example.js ./my-file.txt --mode=signed</pre>
       <ul>
         <li><strong>Upload Service:</strong> https://upload.services.vilenarios.com</li>
         <li><strong>Payment Service:</strong> https://payment.services.vilenarios.com</li>
-        <li><strong>Network:</strong> Base Sepolia (testnet)</li>
+        <li><strong>Network:</strong> Base Mainnet</li>
       </ul>
+      <div class="info-box" style="margin-top: 20px;">
+        <strong>📌 Experimental Service</strong><br>
+        Data may take up to 30 minutes to propagate across the AR.IO network.
+        However, uploads are <span class="highlight">instantly cached and indexed with GraphQL</span> on the bundler's integrated AR.IO Gateway.
+      </div>
     </div>
   </div>
 </body>

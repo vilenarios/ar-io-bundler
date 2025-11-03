@@ -124,6 +124,33 @@
     .info ul { margin: 12px 0 0 20px; }
     .info li { margin: 6px 0; font-size: 0.875rem; }
 
+    /* Service notice banner */
+    .service-notice {
+      background: linear-gradient(to bottom right, rgba(49, 66, 196, 0.08), rgba(49, 66, 196, 0.04));
+      border: 1px solid rgba(49, 66, 196, 0.25);
+      border-left: 4px solid var(--turbo-blue);
+      padding: 16px 24px;
+      margin: 20px 0;
+      border-radius: 8px;
+      font-size: 0.8125rem;
+      line-height: 1.5;
+    }
+
+    .service-notice strong {
+      color: var(--turbo-blue);
+      font-weight: 600;
+    }
+
+    .service-notice .notice-text {
+      color: var(--link);
+      margin-top: 6px;
+    }
+
+    .service-notice .notice-highlight {
+      color: var(--turbo-green);
+      font-weight: 500;
+    }
+
     /* Steps with gradient */
     .step {
       margin: 24px 0;
@@ -302,6 +329,7 @@
         <li>Direct raw file upload (no ANS-104 wrapping needed)</li>
       </ul>
       <p style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(254, 2, 48, 0.3);"><strong>⚠️ Provenance Note:</strong> With raw upload, the data item is <strong>signed by the bundler</strong>, not your wallet. This means <strong>no cryptographic proof of authorship</strong> — anyone could have uploaded this data. For verifiable provenance, use the <em>Signed Data Item</em> mode.</p>
+      <p style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(49, 66, 196, 0.2); color: var(--link); font-size: 0.8125rem;"><strong style="color: var(--turbo-blue);">📌 Experimental Service:</strong> Data may take up to 30 minutes to propagate across the AR.IO network. However, your uploads are <span style="color: var(--turbo-green); font-weight: 500;">instantly cached and indexed with GraphQL</span> on the bundler's integrated AR.IO Gateway.</p>
     </div>
 
     <!-- Signed Data Item Info -->
@@ -318,6 +346,7 @@
         <li>Full ownership and control of the data item signature</li>
       </ul>
       <p style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(254, 2, 48, 0.3);"><strong>✅ Provenance Guarantee:</strong> With signed data item upload, <strong>YOU sign the data item</strong> with your wallet before uploading. This provides <strong>cryptographic proof of authorship</strong> — the data item is permanently linked to your wallet address, proving you created it. This is verifiable on-chain forever.</p>
+      <p style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(49, 66, 196, 0.2); color: var(--link); font-size: 0.8125rem;"><strong style="color: var(--turbo-blue);">📌 Experimental Service:</strong> Data may take up to 30 minutes to propagate across the AR.IO network. However, your uploads are <span style="color: var(--turbo-green); font-weight: 500;">instantly cached and indexed with GraphQL</span> on the bundler's integrated AR.IO Gateway.</p>
     </div>
 
     <div class="config">
@@ -330,8 +359,8 @@
       </label>
       <label>Network:
         <select id="network">
-          <option value="base-sepolia">Base Sepolia (Testnet)</option>
           <option value="base">Base Mainnet</option>
+          <option value="base-sepolia">Base Sepolia (Testnet)</option>
         </select>
       </label>
     </div>
