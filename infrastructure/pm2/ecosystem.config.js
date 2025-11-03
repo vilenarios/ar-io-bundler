@@ -104,12 +104,13 @@ module.exports = {
       kill_timeout: 30000, // Give workers time to finish current jobs
     },
 
-    // Admin Dashboard (formerly Bull Board)
+    // Admin Dashboard Service
     // Monitors all 13 queues + system statistics + bundler metrics
+    // Standalone service for cross-cutting admin concerns
     {
-      name: "bull-board",
-      script: "./packages/upload-service/bull-board-server.js",
-      cwd: process.cwd(),
+      name: "admin-dashboard",
+      script: "./server.js",
+      cwd: "./packages/admin-service",
       instances: 1,
       exec_mode: "fork",
       env_file: "/home/vilenarios/ar-io-bundler/.env",
@@ -123,8 +124,8 @@ module.exports = {
         DB_HOST: "localhost",
         DB_PORT: "5432",
       },
-      error_file: "/home/vilenarios/ar-io-bundler/logs/bull-board-error.log",
-      out_file: "/home/vilenarios/ar-io-bundler/logs/bull-board-out.log",
+      error_file: "/home/vilenarios/ar-io-bundler/logs/admin-dashboard-error.log",
+      out_file: "/home/vilenarios/ar-io-bundler/logs/admin-dashboard-out.log",
       log_date_format: "YYYY-MM-DD HH:mm:ss Z",
       autorestart: true,
       max_memory_restart: "500M", // Prevent memory leaks
