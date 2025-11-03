@@ -164,21 +164,21 @@ async function getRecentPayments(db, limit = 50) {
 
   const results = await db(tableNames.x402PaymentTransaction)
     .select(
-      'payment_id',
+      'id',
       'network',
       'usdc_amount',
       'mode',
-      'created_date'
+      'paid_at'
     )
-    .orderBy('created_date', 'desc')
+    .orderBy('paid_at', 'desc')
     .limit(limit);
 
   return results.map(row => ({
-    paymentId: row.payment_id,
+    paymentId: row.id,
     network: row.network,
     amount: `${parseFloat(row.usdc_amount).toFixed(2)} USDC`,
     mode: row.mode,
-    timestamp: row.created_date
+    timestamp: row.paid_at
   }));
 }
 

@@ -44,12 +44,12 @@ const config = {
   redisQueuePort: process.env.REDIS_QUEUE_PORT || '6381',
   uploadDbHost: process.env.DB_HOST || 'localhost',
   uploadDbPort: process.env.DB_PORT || '5432',
-  uploadDbName: process.env.DB_DATABASE || 'upload_service',
+  uploadDbName: 'upload_service',  // ALWAYS use upload_service for upload stats
   uploadDbUser: process.env.DB_USER || 'postgres',
   uploadDbPassword: process.env.DB_PASSWORD,
   paymentDbHost: process.env.DB_HOST || 'localhost',
   paymentDbPort: process.env.DB_PORT || '5432',
-  paymentDbName: 'payment_service',
+  paymentDbName: 'payment_service',  // ALWAYS use payment_service for payment stats
   paymentDbUser: process.env.DB_USER || 'postgres',
   paymentDbPassword: process.env.DB_PASSWORD
 };

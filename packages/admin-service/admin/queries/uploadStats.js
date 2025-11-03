@@ -52,9 +52,9 @@ async function getAllTimeStats(db) {
   const result = await db(tableNames.plannedDataItem)
     .select(
       db.raw('COUNT(*) as total_uploads'),
-      db.raw('COALESCE(SUM(payload_byte_count), 0) as total_bytes'),
+      db.raw('COALESCE(SUM(CAST(byte_count AS BIGINT)), 0) as total_bytes'),
       db.raw('COUNT(DISTINCT owner_public_address) as unique_uploaders'),
-      db.raw('COALESCE(AVG(payload_byte_count), 0) as average_size')
+      db.raw('COALESCE(AVG(CAST(byte_count AS BIGINT)), 0) as average_size')
     )
     .first();
 
@@ -77,7 +77,7 @@ async function getTodayStats(db) {
     db(tableNames.newDataItem)
       .select(
         db.raw('COUNT(*) as total_uploads'),
-        db.raw('COALESCE(SUM(data_item_size), 0) as total_bytes'),
+        db.raw('COALESCE(SUM(CAST(byte_count AS BIGINT)), 0) as total_bytes'),
         db.raw('COUNT(DISTINCT owner_public_address) as unique_uploaders')
       )
       .where(db.raw('DATE(uploaded_date)'), '=', db.raw('CURRENT_DATE'))
@@ -86,7 +86,7 @@ async function getTodayStats(db) {
     db(tableNames.plannedDataItem)
       .select(
         db.raw('COUNT(*) as total_uploads'),
-        db.raw('COALESCE(SUM(payload_byte_count), 0) as total_bytes'),
+        db.raw('COALESCE(SUM(CAST(byte_count AS BIGINT)), 0) as total_bytes'),
         db.raw('COUNT(DISTINCT owner_public_address) as unique_uploaders')
       )
       .where(db.raw('DATE(planned_date)'), '=', db.raw('CURRENT_DATE'))
@@ -116,7 +116,7 @@ async function getWeekStats(db) {
     db(tableNames.newDataItem)
       .select(
         db.raw('COUNT(*) as total_uploads'),
-        db.raw('COALESCE(SUM(data_item_size), 0) as total_bytes'),
+        db.raw('COALESCE(SUM(CAST(byte_count AS BIGINT)), 0) as total_bytes'),
         db.raw('COUNT(DISTINCT owner_public_address) as unique_uploaders')
       )
       .where('uploaded_date', '>=', db.raw("CURRENT_DATE - INTERVAL '7 days'"))
@@ -125,7 +125,7 @@ async function getWeekStats(db) {
     db(tableNames.plannedDataItem)
       .select(
         db.raw('COUNT(*) as total_uploads'),
-        db.raw('COALESCE(SUM(payload_byte_count), 0) as total_bytes'),
+        db.raw('COALESCE(SUM(CAST(byte_count AS BIGINT)), 0) as total_bytes'),
         db.raw('COUNT(DISTINCT owner_public_address) as unique_uploaders')
       )
       .where('planned_date', '>=', db.raw("CURRENT_DATE - INTERVAL '7 days'"))
@@ -192,7 +192,7 @@ async function getTopUploaders(db, limit = 10) {
     .select(
       'owner_public_address',
       db.raw('COUNT(*) as upload_count'),
-      db.raw('COALESCE(SUM(payload_byte_count), 0) as total_bytes')
+      db.raw('COALESCE(SUM(CAST(byte_count AS BIGINT)), 0) as total_bytes')
     )
     .where('planned_date', '>=', db.raw("NOW() - INTERVAL '30 days'"))
     .groupBy('owner_public_address')
@@ -215,7 +215,7 @@ async function getRecentUploads(db, limit = 50) {
   const newUploads = await db(tableNames.newDataItem)
     .select(
       `${columnNames.dataItemId} as id`,
-      'data_item_size as size',
+      'byte_count as size',
       'signature_type',
       'owner_public_address as owner',
       'uploaded_date as timestamp'
@@ -228,7 +228,7 @@ async function getRecentUploads(db, limit = 50) {
     ? await db(tableNames.plannedDataItem)
         .select(
           `${columnNames.dataItemId} as id`,
-          'payload_byte_count as size',
+          'byte_count as size',
           'signature_type',
           'owner_public_address as owner',
           'planned_date as timestamp'
