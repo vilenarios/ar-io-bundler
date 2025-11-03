@@ -104,24 +104,30 @@ module.exports = {
       kill_timeout: 30000, // Give workers time to finish current jobs
     },
 
-    // Bull Board - Queue Monitoring Dashboard
-    // Monitors all 13 queues: 11 upload + 2 payment service queues
+    // Admin Dashboard (formerly Bull Board)
+    // Monitors all 13 queues + system statistics + bundler metrics
     {
       name: "bull-board",
       script: "./packages/upload-service/bull-board-server.js",
       cwd: process.cwd(),
       instances: 1,
       exec_mode: "fork",
+      env_file: "/home/vilenarios/ar-io-bundler/.env",
       env: {
         NODE_ENV: process.env.NODE_ENV || "production",
         BULL_BOARD_PORT: 3002,
+        REDIS_CACHE_HOST: "localhost",
+        REDIS_CACHE_PORT: "6379",
         REDIS_QUEUE_HOST: "localhost",
         REDIS_QUEUE_PORT: "6381",
+        DB_HOST: "localhost",
+        DB_PORT: "5432",
       },
       error_file: "/home/vilenarios/ar-io-bundler/logs/bull-board-error.log",
       out_file: "/home/vilenarios/ar-io-bundler/logs/bull-board-out.log",
       log_date_format: "YYYY-MM-DD HH:mm:ss Z",
       autorestart: true,
+      max_memory_restart: "500M", // Prevent memory leaks
     },
   ],
 };
