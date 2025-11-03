@@ -10,6 +10,9 @@
 
 const { tableNames, columnNames } = require('../../lib/database/dbConstants');
 
+// USDC has 6 decimals, so amounts in DB are in smallest unit
+const USDC_DECIMALS = 1000000;
+
 /**
  * Get comprehensive payment statistics
  * @param {object} db - Knex database connection
@@ -46,8 +49,8 @@ async function getX402PaymentStats(db) {
   if (!tableExists) {
     return {
       totalCount: 0,
-      totalUSDC: "0.00",
-      averagePayment: "0.00",
+      totalUSDC: "0.000000",
+      averagePayment: "0.000000",
       byNetwork: {},
       byMode: {}
     };
@@ -76,7 +79,7 @@ async function getX402PaymentStats(db) {
   byNetworkResults.forEach(row => {
     byNetwork[row.network] = {
       count: parseInt(row.count),
-      amount: parseFloat(row.total_amount).toFixed(2)
+      amount: (parseFloat(row.total_amount) / USDC_DECIMALS).toFixed(6)
     };
   });
 
@@ -94,14 +97,14 @@ async function getX402PaymentStats(db) {
   byModeResults.forEach(row => {
     byMode[row.mode] = {
       count: parseInt(row.count),
-      amount: parseFloat(row.total_amount).toFixed(2)
+      amount: (parseFloat(row.total_amount) / USDC_DECIMALS).toFixed(6)
     };
   });
 
   return {
     totalCount: parseInt(totalStats.total_count),
-    totalUSDC: parseFloat(totalStats.total_usdc).toFixed(2),
-    averagePayment: parseFloat(totalStats.average_payment).toFixed(2),
+    totalUSDC: (parseFloat(totalStats.total_usdc) / USDC_DECIMALS).toFixed(6),
+    averagePayment: (parseFloat(totalStats.average_payment) / USDC_DECIMALS).toFixed(6),
     byNetwork,
     byMode
   };
@@ -116,8 +119,8 @@ async function getTopUpStats(db) {
   if (!tableExists) {
     return {
       totalCount: 0,
-      totalUSDC: "0.00",
-      averageTopUp: "0.00"
+      totalUSDC: "0.000000",
+      averageTopUp: "0.000000"
     };
   }
 
@@ -132,8 +135,8 @@ async function getTopUpStats(db) {
 
   return {
     totalCount: parseInt(result.total_count),
-    totalUSDC: parseFloat(result.total_usdc).toFixed(2),
-    averageTopUp: parseFloat(result.average_topup).toFixed(2)
+    totalUSDC: (parseFloat(result.total_usdc) / USDC_DECIMALS).toFixed(6),
+    averageTopUp: (parseFloat(result.average_topup) / USDC_DECIMALS).toFixed(6)
   };
 }
 
@@ -176,7 +179,7 @@ async function getRecentPayments(db, limit = 50) {
   return results.map(row => ({
     paymentId: row.id,
     network: row.network,
-    amount: `${parseFloat(row.usdc_amount).toFixed(2)} USDC`,
+    amount: `${(parseFloat(row.usdc_amount) / USDC_DECIMALS).toFixed(6)} USDC`,
     mode: row.mode,
     timestamp: row.paid_at
   }));

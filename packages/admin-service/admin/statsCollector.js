@@ -232,15 +232,15 @@ function getEmptyPaymentStats() {
   return {
     x402Payments: {
       totalCount: 0,
-      totalUSDC: '0.00',
-      averagePayment: '0.00',
+      totalUSDC: '0.000000',
+      averagePayment: '0.000000',
       byNetwork: {},
       byMode: {}
     },
     topUps: {
       totalCount: 0,
-      totalUSDC: '0.00',
-      averageTopUp: '0.00'
+      totalUSDC: '0.000000',
+      averageTopUp: '0.000000'
     },
     freeUploads: {
       count: 0,
