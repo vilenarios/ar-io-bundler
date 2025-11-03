@@ -12,6 +12,11 @@
 const uploadServicePath = require('path').join(__dirname, '../../../upload-service');
 const { tableNames, columnNames } = require(uploadServicePath + '/lib/arch/db/dbConstants');
 
+// Filter out test/dummy addresses from statistics
+const TEST_ADDRESSES = [
+  '1234567890123456789012345678901231234567890'  // Dummy test address
+];
+
 /**
  * Get comprehensive upload statistics
  * @param {object} db - Knex database connection (reader)
@@ -50,6 +55,7 @@ async function getUploadStats(db) {
 async function getAllTimeStats(db) {
   // Query planned_data_item for successfully processed uploads
   const result = await db(tableNames.plannedDataItem)
+    .whereNotIn('owner_public_address', TEST_ADDRESSES)
     .select(
       db.raw('COUNT(*) as total_uploads'),
       db.raw('COALESCE(SUM(CAST(byte_count AS BIGINT)), 0) as total_bytes'),
@@ -75,21 +81,23 @@ async function getTodayStats(db) {
   // Check both new_data_item (pending) and planned_data_item (today's completed)
   const [newResults, plannedResults] = await Promise.all([
     db(tableNames.newDataItem)
+      .whereNotIn('owner_public_address', TEST_ADDRESSES)
+      .where(db.raw('DATE(uploaded_date)'), '=', db.raw('CURRENT_DATE'))
       .select(
         db.raw('COUNT(*) as total_uploads'),
         db.raw('COALESCE(SUM(CAST(byte_count AS BIGINT)), 0) as total_bytes'),
         db.raw('COUNT(DISTINCT owner_public_address) as unique_uploaders')
       )
-      .where(db.raw('DATE(uploaded_date)'), '=', db.raw('CURRENT_DATE'))
       .first(),
 
     db(tableNames.plannedDataItem)
+      .whereNotIn('owner_public_address', TEST_ADDRESSES)
+      .where(db.raw('DATE(planned_date)'), '=', db.raw('CURRENT_DATE'))
       .select(
         db.raw('COUNT(*) as total_uploads'),
         db.raw('COALESCE(SUM(CAST(byte_count AS BIGINT)), 0) as total_bytes'),
         db.raw('COUNT(DISTINCT owner_public_address) as unique_uploaders')
       )
-      .where(db.raw('DATE(planned_date)'), '=', db.raw('CURRENT_DATE'))
       .first()
   ]);
 
@@ -114,21 +122,23 @@ async function getTodayStats(db) {
 async function getWeekStats(db) {
   const [newResults, plannedResults] = await Promise.all([
     db(tableNames.newDataItem)
+      .whereNotIn('owner_public_address', TEST_ADDRESSES)
+      .where('uploaded_date', '>=', db.raw("CURRENT_DATE - INTERVAL '7 days'"))
       .select(
         db.raw('COUNT(*) as total_uploads'),
         db.raw('COALESCE(SUM(CAST(byte_count AS BIGINT)), 0) as total_bytes'),
         db.raw('COUNT(DISTINCT owner_public_address) as unique_uploaders')
       )
-      .where('uploaded_date', '>=', db.raw("CURRENT_DATE - INTERVAL '7 days'"))
       .first(),
 
     db(tableNames.plannedDataItem)
+      .whereNotIn('owner_public_address', TEST_ADDRESSES)
+      .where('planned_date', '>=', db.raw("CURRENT_DATE - INTERVAL '7 days'"))
       .select(
         db.raw('COUNT(*) as total_uploads'),
         db.raw('COALESCE(SUM(CAST(byte_count AS BIGINT)), 0) as total_bytes'),
         db.raw('COUNT(DISTINCT owner_public_address) as unique_uploaders')
       )
-      .where('planned_date', '>=', db.raw("CURRENT_DATE - INTERVAL '7 days'"))
       .first()
   ]);
 
@@ -152,6 +162,7 @@ async function getWeekStats(db) {
  */
 async function getSignatureTypeStats(db) {
   const results = await db(tableNames.plannedDataItem)
+    .whereNotIn('owner_public_address', TEST_ADDRESSES)
     .select(
       'signature_type',
       db.raw('COUNT(*) as count'),
@@ -189,12 +200,13 @@ async function getSignatureTypeStats(db) {
  */
 async function getTopUploaders(db, limit = 10) {
   const results = await db(tableNames.plannedDataItem)
+    .whereNotIn('owner_public_address', TEST_ADDRESSES)
+    .where('planned_date', '>=', db.raw("NOW() - INTERVAL '30 days'"))
     .select(
       'owner_public_address',
       db.raw('COUNT(*) as upload_count'),
       db.raw('COALESCE(SUM(CAST(byte_count AS BIGINT)), 0) as total_bytes')
     )
-    .where('planned_date', '>=', db.raw("NOW() - INTERVAL '30 days'"))
     .groupBy('owner_public_address')
     .orderBy('upload_count', 'desc')
     .limit(limit);
@@ -213,6 +225,7 @@ async function getTopUploaders(db, limit = 10) {
 async function getRecentUploads(db, limit = 50) {
   // Get from new_data_item (most recent, not yet bundled)
   const newUploads = await db(tableNames.newDataItem)
+    .whereNotIn('owner_public_address', TEST_ADDRESSES)
     .select(
       `${columnNames.dataItemId} as id`,
       'byte_count as size',
@@ -226,6 +239,7 @@ async function getRecentUploads(db, limit = 50) {
   // Also get recently planned items if we don't have enough
   const plannedUploads = newUploads.length < limit
     ? await db(tableNames.plannedDataItem)
+        .whereNotIn('owner_public_address', TEST_ADDRESSES)
         .select(
           `${columnNames.dataItemId} as id`,
           'byte_count as size',
@@ -273,22 +287,20 @@ function getSignatureTypeName(type) {
  * Helper: Format bytes to human-readable string
  */
 function formatBytes(bytes) {
-  const num = typeof bytes === 'string' ? BigInt(bytes) : BigInt(bytes || 0);
-  if (num === 0n) return '0 B';
+  const num = typeof bytes === 'string' ? parseFloat(bytes) : parseFloat(bytes || 0);
+  if (num === 0) return '0 B';
 
-  const k = 1024n;
+  const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   let i = 0;
   let value = num;
 
   while (value >= k && i < sizes.length - 1) {
-    value = value / k;
+    value = value / k;  // Regular number division preserves decimals
     i++;
   }
 
-  // Convert back to number for decimal formatting
-  const numValue = Number(value);
-  return `${numValue.toFixed(2)} ${sizes[i]}`;
+  return `${value.toFixed(2)} ${sizes[i]}`;
 }
 
 module.exports = {
