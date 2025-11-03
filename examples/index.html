@@ -66,35 +66,37 @@
     </div>
 
     <div class="card">
-      <h3>🧪 Test MetaMask Detection</h3>
-      <p>Diagnostic tool to verify MetaMask is detected correctly.</p>
-      <a href="test-metamask.html">Open MetaMask Test</a>
+      <h3>🌐 Browser Example: x402-upload.html</h3>
+      <p>Complete browser-based x402 upload with BOTH raw and signed data item modes.</p>
+      <p><strong>Features:</strong></p>
+      <ul>
+        <li>✅ Dual-mode interface - Switch between raw and signed uploads with tabs</li>
+        <li>✅ Single MetaMask wallet - One wallet for both data signing and payment</li>
+        <li>✅ RAW MODE: Upload files directly without data item signing (simplest)</li>
+        <li>✅ SIGNED MODE: Sign data items with Ethereum wallet (ANS-104 signatureType 3)</li>
+        <li>✅ Clean x402 flow - Gets price quote, then uploads with USDC payment</li>
+        <li>✅ Production-ready - Tested and verified implementation</li>
+      </ul>
+      <a href="x402-upload.html">Open Browser Example</a>
     </div>
 
     <div class="card">
-      <h3>📤 x402 Raw Upload (Simplest)</h3>
-      <p>Upload raw files directly with automatic USDC payment using x402-fetch library.</p>
-      <p><strong>Perfect for getting started:</strong></p>
+      <h3>🖥️ Node.js Example: x402-upload-example.js</h3>
+      <p>Command-line tool for uploading files from Node.js/backend applications.</p>
+      <p><strong>Features:</strong></p>
       <ul>
-        <li>✨ No data item signing required</li>
-        <li>🚀 Uses official x402-fetch library</li>
-        <li>💰 Automatic 402 payment detection and handling</li>
-        <li>📦 Direct raw file upload</li>
+        <li>✅ Mirrors browser interface with both raw and signed modes</li>
+        <li>✅ CLI tool with --mode=raw|signed flag</li>
+        <li>✅ Library mode - Export functions for use in your own code</li>
+        <li>✅ Complete error handling and balance checking</li>
       </ul>
-      <a href="x402-raw-upload.html">Open Raw Upload Example</a>
-    </div>
+      <p><strong>Usage:</strong></p>
+      <pre style="background: #f0f0f0; padding: 10px; border-radius: 5px; overflow-x: auto;">
+# Raw mode (default)
+node x402-upload-example.js ./my-file.txt
 
-    <div class="card">
-      <h3>📤 x402 Upload with Signed Data Item (Advanced)</h3>
-      <p>Upload files with ANS-104 signed data items for advanced use cases.</p>
-      <p><strong>Complete implementation showing:</strong></p>
-      <ul>
-        <li>MetaMask wallet connection</li>
-        <li>ANS-104 signed data item creation (Ethereum signature)</li>
-        <li>Manual x402 payment flow with EIP-3009 USDC authorization</li>
-        <li>Support for Base Sepolia (testnet) and Base Mainnet</li>
-      </ul>
-      <a href="x402-upload-signed-data-item.html">Open Signed Upload Example</a>
+# Signed mode
+node x402-upload-example.js ./my-file.txt --mode=signed</pre>
     </div>
 
     <div class="card">

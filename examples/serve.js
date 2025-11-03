@@ -56,10 +56,9 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`\n🚀 Server running at http://localhost:${PORT}/`);
-  console.log(`\n📁 Available files:`);
-  console.log(`   http://localhost:${PORT}/test-metamask.html`);
-  console.log(`   http://localhost:${PORT}/x402-raw-upload.html`);
-  console.log(`   http://localhost:${PORT}/x402-upload-signed-data-item.html`);
+  console.log(`\n📁 Available examples:`);
+  console.log(`   http://localhost:${PORT}/ (index page)`);
+  console.log(`   http://localhost:${PORT}/x402-upload.html (browser example)`);
   console.log(`\n✨ MetaMask will work on http:// URLs!\n`);
   console.log(`Press Ctrl+C to stop the server\n`);
 });
