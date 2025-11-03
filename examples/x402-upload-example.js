@@ -1,7 +1,11 @@
 /**
  * Example: Upload a file to AR.IO Bundler using Coinbase x402 payment protocol
  *
- * This example demonstrates the programmatic x402 payment flow:
+ * This example mirrors the x402-upload.html browser interface with two modes:
+ * 1. RAW MODE (default): Upload files directly without data item signing
+ * 2. SIGNED MODE: Sign data items with Ethereum wallet before upload
+ *
+ * x402 Payment Flow:
  * 1. Get a price quote for an upload (200 OK with payment requirements)
  * 2. Create an EIP-3009 USDC transfer authorization
  * 3. Sign it with EIP-712
@@ -19,14 +23,23 @@
  * - ethers v6
  * - axios
  * - arweave
+ * - arbundles (for signed mode)
  * - USDC on Base (mainnet or Sepolia testnet)
  * - Ethereum wallet with Base network configured
  *
- * Install: npm install ethers@6 axios arweave
+ * Install: npm install ethers@6 axios arweave arbundles
  *
  * Usage:
+ *   # Raw mode (default - simplest)
  *   export ETH_PRIVATE_KEY=your_private_key
  *   export X402_NETWORK=base-mainnet  # or base-sepolia for testing
+ *   node x402-upload-example.js ./my-file.txt
+ *
+ *   # Signed mode (advanced - signs data item with Ethereum wallet)
+ *   node x402-upload-example.js ./my-file.txt --mode=signed
+ *
+ *   # Or use environment variable
+ *   export UPLOAD_MODE=signed
  *   node x402-upload-example.js ./my-file.txt
  */
 
@@ -63,6 +76,11 @@ const CONFIG = {
       ? 'https://sepolia.base.org'
       : 'https://mainnet.base.org'
   ),
+
+  // Upload mode: 'raw' (default) or 'signed'
+  // Raw mode: Upload file directly (simplest, matches x402-upload.html raw tab)
+  // Signed mode: Sign data item with Ethereum wallet first (advanced, matches x402-upload.html signed tab)
+  mode: process.env.UPLOAD_MODE || 'raw',
 };
 
 // EIP-712 Domain for USDC transferWithAuthorization
@@ -226,29 +244,45 @@ async function uploadWithX402(filePath, paymentHeader) {
 }
 
 /**
- * Alternative: Upload with Arweave signed data item
+ * Upload with Ethereum-signed data item (matches x402-upload.html signed mode)
+ * Uses ANS-104 with signatureType 3 (Ethereum)
  */
-async function uploadDataItemWithX402(filePath, arweaveJWK, paymentHeader) {
-  const arweave = Arweave.init({});
-  const data = fs.readFileSync(filePath);
+async function uploadSignedDataItemWithX402(filePath, wallet, paymentHeader) {
+  const { createData, EthereumSigner } = require('arbundles');
+  const fileBuffer = fs.readFileSync(filePath);
+  const path = require('path');
 
-  // Create and sign data item
-  const DataItem = require('arbundles').DataItem;
-  const dataItem = new DataItem(data);
-  await dataItem.sign(arweaveJWK);
+  console.log('✍️  Creating and signing ANS-104 data item with Ethereum wallet...');
 
-  const dataItemBuffer = dataItem.getRaw();
+  // Create Ethereum signer (signatureType 3)
+  const signer = new EthereumSigner(CONFIG.privateKey);
 
-  console.log(`📤 Uploading Arweave data item (${dataItemBuffer.length} bytes) with x402 payment...`);
+  // Create data item
+  const dataItem = createData(fileBuffer, signer);
+
+  // Add tags
+  const fileName = path.basename(filePath);
+  const mimeType = getMimeType(fileName);
+  dataItem.addTag('Content-Type', mimeType);
+  dataItem.addTag('File-Name', fileName);
+
+  // Sign data item
+  await dataItem.sign(signer);
+
+  const signedDataItem = dataItem.getRaw();
+  console.log(`   Data item signed (${signedDataItem.length} bytes)`);
+  console.log(`   Signature Type: 3 (Ethereum)`);
+
+  console.log(`📤 Uploading signed data item with x402 payment...`);
 
   try {
     const response = await axios.post(
       `${CONFIG.uploadServiceUrl}/v1/tx`,
-      dataItemBuffer,
+      signedDataItem,
       {
         headers: {
           'Content-Type': 'application/octet-stream',
-          'Content-Length': dataItemBuffer.length.toString(),
+          'Content-Length': signedDataItem.length.toString(),
           'X-PAYMENT': paymentHeader,
         },
         maxBodyLength: Infinity,
@@ -258,13 +292,36 @@ async function uploadDataItemWithX402(filePath, arweaveJWK, paymentHeader) {
 
     console.log('✅ Upload successful!');
     console.log('   Data Item ID:', response.data.id);
-    console.log('   x402 Payment:', response.data.x402Payment);
+    console.log('   Signature Type: Ethereum (3)');
+    console.log('   x402 Payment:', JSON.stringify(response.data.x402Payment, null, 2));
 
     return response.data;
   } catch (error) {
     console.error('❌ Upload failed:', error.response?.data || error.message);
     throw error;
   }
+}
+
+/**
+ * Helper: Get MIME type from file name
+ */
+function getMimeType(fileName) {
+  const ext = fileName.split('.').pop().toLowerCase();
+  const mimeTypes = {
+    'txt': 'text/plain',
+    'html': 'text/html',
+    'css': 'text/css',
+    'js': 'application/javascript',
+    'json': 'application/json',
+    'png': 'image/png',
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'gif': 'image/gif',
+    'svg': 'image/svg+xml',
+    'pdf': 'application/pdf',
+    'zip': 'application/zip',
+  };
+  return mimeTypes[ext] || 'application/octet-stream';
 }
 
 /**
@@ -292,16 +349,34 @@ async function checkUSDCBalance() {
  * Main execution
  */
 async function main() {
-  const filePath = process.argv[2];
+  let filePath = process.argv[2];
+  let mode = CONFIG.mode;
 
-  if (!filePath) {
-    console.error('Usage: node x402-upload-example.js <file-path>');
-    console.error('Example: node x402-upload-example.js ./my-file.txt');
+  // Parse command line arguments
+  if (process.argv.includes('--mode=signed')) {
+    mode = 'signed';
+    filePath = process.argv.find(arg => !arg.startsWith('--') && arg !== process.argv[0] && arg !== process.argv[1]);
+  } else if (process.argv.includes('--mode=raw')) {
+    mode = 'raw';
+    filePath = process.argv.find(arg => !arg.startsWith('--') && arg !== process.argv[0] && arg !== process.argv[1]);
+  }
+
+  if (!filePath || filePath.startsWith('--')) {
+    console.error('Usage: node x402-upload-example.js <file-path> [--mode=raw|signed]');
+    console.error('\nExamples:');
+    console.error('  node x402-upload-example.js ./my-file.txt                # Raw mode (default)');
+    console.error('  node x402-upload-example.js ./my-file.txt --mode=raw    # Explicit raw mode');
+    console.error('  node x402-upload-example.js ./my-file.txt --mode=signed # Signed data item mode');
+    console.error('\nModes:');
+    console.error('  raw    - Upload files directly (simplest, no data item signing)');
+    console.error('  signed - Sign data items with Ethereum wallet (ANS-104 signatureType 3)');
     console.error('\nEnvironment Variables:');
     console.error('  ETH_PRIVATE_KEY      - Your Ethereum private key (required)');
     console.error('  X402_NETWORK         - Network: base-mainnet or base-sepolia (default: base-mainnet)');
+    console.error('  UPLOAD_MODE          - Mode: raw or signed (default: raw)');
     console.error('  UPLOAD_SERVICE_URL   - Upload service URL (default: http://localhost:3001)');
     console.error('  PAYMENT_SERVICE_URL  - Payment service URL (default: http://localhost:4001)');
+    console.error('\nNote: This mirrors the x402-upload.html browser interface with both raw and signed modes.');
     process.exit(1);
   }
 
@@ -317,6 +392,7 @@ async function main() {
   }
 
   console.log('🚀 AR.IO Bundler x402 Upload Example');
+  console.log(`   Mode: ${mode.toUpperCase()}`);
   console.log(`   Network: ${CONFIG.network}`);
   console.log(`   Chain ID: ${CONFIG.chainId}`);
   console.log(`   USDC Contract: ${CONFIG.usdcAddress}\n`);
@@ -349,11 +425,18 @@ async function main() {
       process.exit(1);
     }
 
-    // Step 3: Upload file with x402 payment
-    // If upload fails with 402, it means the payment wasn't accepted
-    const receipt = await uploadWithX402(filePath, paymentHeader);
+    // Step 3: Upload file with x402 payment (mode-dependent)
+    let receipt;
+    if (mode === 'signed') {
+      // Signed mode: Create and sign ANS-104 data item with Ethereum wallet
+      receipt = await uploadSignedDataItemWithX402(filePath, wallet, paymentHeader);
+    } else {
+      // Raw mode: Upload file directly without data item signing
+      receipt = await uploadWithX402(filePath, paymentHeader);
+    }
 
     console.log('\n✨ Success! Your file has been uploaded and paid for with USDC.');
+    console.log(`   Mode: ${mode.toUpperCase()}`);
     console.log(`   Data Item ID: ${receipt.id}`);
     console.log(`   View on Arweave: https://arweave.net/${receipt.id}`);
 
@@ -361,7 +444,7 @@ async function main() {
       console.log(`\n💰 Payment Details:`);
       console.log(`   Payment ID: ${receipt.x402Payment.paymentId}`);
       console.log(`   Network: ${receipt.x402Payment.network}`);
-      console.log(`   Mode: ${receipt.x402Payment.mode}`);
+      console.log(`   Payment Mode: ${receipt.x402Payment.mode}`);
     }
 
   } catch (error) {
@@ -386,7 +469,8 @@ module.exports = {
   getPriceQuote,
   createX402Payment,
   uploadWithX402,
-  uploadDataItemWithX402,
+  uploadSignedDataItemWithX402,
   checkUSDCBalance,
+  getMimeType,
   CONFIG,
 };

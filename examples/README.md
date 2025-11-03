@@ -67,19 +67,32 @@ open "http://localhost:4001/v1/x402/price/3/YOUR_ADDRESS?bytes=1024"
 
 ## Examples
 
-We provide **3 production-ready examples**:
+We provide **2 production-ready examples**:
 
-### 1. 🚀 Simplest Example: `x402-raw-upload.html` ⭐ START HERE
+### 1. 🌐 Browser Example: `x402-upload.html` ⭐ START HERE
 
-**Upload raw files with automatic x402 payment using the official x402-fetch library.**
+**Complete browser-based x402 upload with BOTH raw and signed data item modes.**
 
 #### Why This Example?
 
-- ✅ **Simplest approach** - No data item signing, no arbundles, just upload
-- ✅ **Official x402-fetch library** - Automatic 402 payment detection and handling
-- ✅ **Production-ready** - Uses Coinbase's official x402 implementation
-- ✅ **Perfect for getting started** - Minimal code, maximum clarity
+- ✅ **Dual-mode interface** - Switch between raw and signed uploads with tabs
+- ✅ **Single MetaMask wallet** - Uses one Ethereum wallet for both data signing and payment
+- ✅ **Production-ready** - Tested and verified implementation
+- ✅ **Well-documented** - Inline comments explain every step
 - ✅ **No build step** - Just open the HTML file via HTTP server
+- ✅ **Clean x402 flow** - Gets price quote, then uploads with payment
+
+#### Two Upload Modes
+
+**RAW MODE (Simplest):**
+- Upload files directly without data item signing
+- Perfect for getting started
+- Minimal code, maximum clarity
+
+**SIGNED MODE (Advanced):**
+- Sign data items with Ethereum wallet (ANS-104 signatureType 3)
+- Full control over data item tags
+- Both data signature AND payment signature use the same MetaMask wallet
 
 #### Quick Start
 
@@ -89,98 +102,28 @@ cd examples
 node serve.js
 
 # Open in browser
-http://localhost:8080/x402-raw-upload.html
+http://localhost:8080/x402-upload.html
 ```
 
 #### Usage Flow
 
+**Raw Mode:**
 1. Connect MetaMask wallet
 2. Select a file to upload
 3. Click "Upload with x402 Payment"
-4. x402-fetch automatically detects 402, prompts for payment signature
+4. Sign USDC payment (MetaMask prompt)
 5. Upload completes with receipt
 
-#### Code Example
-
-```javascript
-import { wrapFetchWithPayment } from 'x402-fetch';
-import { createWalletClient, custom } from 'viem';
-import { baseSepolia } from 'viem/chains';
-
-// Create viem wallet client from MetaMask
-const walletClient = createWalletClient({
-  account,
-  chain: baseSepolia,
-  transport: custom(window.ethereum)
-});
-
-// Wrap fetch with automatic x402 handling
-const fetchWithPayment = wrapFetchWithPayment(fetch, walletClient);
-
-// Upload raw file - payment handled automatically!
-const fileData = await file.arrayBuffer();
-const response = await fetchWithPayment('https://upload.services.vilenarios.com/v1/tx', {
-  method: 'POST',
-  headers: {
-    'Content-Type': file.type,
-    'Content-Length': fileData.byteLength.toString(),
-  },
-  body: fileData
-});
-
-const receipt = await response.json();
-console.log('Uploaded:', receipt.id);
-```
-
-#### Libraries Used
-
-- **viem@2.x** - Ethereum wallet client
-- **x402-fetch@latest** - Official Coinbase x402 SDK for automatic payment handling
-
----
-
-### 2. 🌐 Advanced Example: `x402-upload-signed-data-item.html` ⭐ RECOMMENDED
-
-**Complete browser-based x402 upload with signed ANS-104 data items.**
-
-#### Why This Example?
-
-- ✅ **Production-ready** - Tested and verified implementation
-- ✅ **Single MetaMask wallet** - Uses one Ethereum wallet for both data signing and payment
-- ✅ **Comprehensive** - Complete ANS-104 data item signing with arbundles
-- ✅ **Well-documented** - Inline comments explain every step
-- ✅ **No build step** - Just open the HTML file via HTTP server
-- ✅ **Clean x402 flow** - Gets price quote first, then uploads with payment
-
-#### Key Features
-
-**Handles Both Required Signatures:**
-1. **Data Item Signature** - Signs your file data as an ANS-104 bundle (signatureType 3 for Ethereum)
-2. **Payment Signature** - Signs USDC payment authorization with EIP-712
-
-**Both use the same MetaMask wallet!** No Arweave wallet needed.
-
-#### Quick Start
-
-```bash
-# Start the HTTP server (required for MetaMask)
-cd examples
-node serve.js
-
-# Open in browser
-http://localhost:8080/x402-upload-signed-data-item.html
-```
-
-#### Usage Flow
-
+**Signed Mode:**
 1. Connect MetaMask wallet
-2. Select a file to upload
-3. Click "Upload with USDC Payment"
-4. Sign data item (MetaMask prompt #1)
-5. Sign USDC payment (MetaMask prompt #2)
-6. Upload completes with receipt
+2. Switch to "Signed Data Item" tab
+3. Select a file to upload
+4. Click "Upload with USDC Payment"
+5. Sign data item (MetaMask prompt #1)
+6. Sign USDC payment (MetaMask prompt #2)
+7. Upload completes with receipt
 
-#### Code Example
+#### Code Example (Signed Mode)
 
 ```javascript
 // Step 1: Create and sign ANS-104 data item
@@ -229,13 +172,14 @@ console.log('Payment:', receipt.x402Payment);
 
 ---
 
-### 3. 🖥️ Node.js Example: `x402-upload-example.js` ⭐ RECOMMENDED
+### 2. 🖥️ Node.js Example: `x402-upload-example.js` ⭐ RECOMMENDED
 
-**Command-line tool for uploading files from Node.js/backend applications.**
+**Command-line tool for uploading files from Node.js/backend applications. Mirrors the browser interface with both raw and signed modes.**
 
 #### Why This Example?
 
 - ✅ **Backend-friendly** - Server-side, CI/CD, automated uploads
+- ✅ **Dual-mode CLI** - Supports both raw and signed uploads (matches browser interface)
 - ✅ **CLI tool** - Upload files from command line
 - ✅ **Library mode** - Export functions for use in your own code
 - ✅ **Complete error handling** - Production-grade error messages
@@ -276,69 +220,100 @@ Edit the `CONFIG` object in `x402-upload-example.js` directly.
 **As CLI Tool:**
 
 ```bash
-# Upload a file
+# Raw mode (default - simplest, no data item signing)
 node x402-upload-example.js ./my-file.txt
 
-# Upload an image
-node x402-upload-example.js ./photo.jpg
+# Signed mode (advanced - signs data item with Ethereum wallet)
+node x402-upload-example.js ./my-file.txt --mode=signed
 
-# Upload any file
-node x402-upload-example.js /path/to/any-file
+# Or use environment variable
+export UPLOAD_MODE=signed
+node x402-upload-example.js ./photo.jpg
 ```
 
 **As Library:**
 
 ```javascript
-const { uploadFileWithX402, checkUsdcBalance } = require('./x402-upload-example.js');
+const {
+  uploadWithX402,
+  uploadSignedDataItemWithX402,
+  checkUSDCBalance,
+  getPriceQuote,
+  createX402Payment
+} = require('./x402-upload-example.js');
 
 // Check balance first
-const balance = await checkUsdcBalance(wallet, usdcContract);
+const balance = await checkUSDCBalance();
 console.log(`USDC Balance: ${balance} USDC`);
 
-// Upload a file
-const receipt = await uploadFileWithX402('./myfile.txt');
+// Raw mode - Upload file directly
+const receipt = await uploadWithX402('./myfile.txt', paymentHeader);
 console.log('Upload ID:', receipt.id);
-console.log('Payment:', receipt.x402Payment);
+
+// Signed mode - Upload with Ethereum-signed data item
+const signedReceipt = await uploadSignedDataItemWithX402('./myfile.txt', wallet, paymentHeader);
+console.log('Upload ID:', signedReceipt.id);
+console.log('Payment:', signedReceipt.x402Payment);
 ```
 
 #### Features
 
+- ✅ **Dual-mode support** - Raw and signed uploads (matches x402-upload.html)
 - ✅ Checks USDC balance before upload
 - ✅ Gets price quote from payment service
-- ✅ Creates and signs ANS-104 data items
+- ✅ **Raw mode:** Direct file upload without signing
+- ✅ **Signed mode:** Creates and signs ANS-104 data items with Ethereum wallet (signatureType 3)
 - ✅ Creates and signs EIP-712 payment authorization
 - ✅ Uploads file with x402 payment header
 - ✅ Displays detailed receipt with transaction hash
 - ✅ Can be used as a CLI or imported as library
 
-#### Example Output
+#### Example Output (Raw Mode)
 
 ```
 🚀 AR.IO x402 Upload Example
+   Mode: RAW
+   Network: base-sepolia
+   Chain ID: 84532
+
+🔑 Wallet: 0x1234...5678
 
 💵 USDC Balance: 10.5 USDC
 📊 Getting price quote for 2048 bytes...
 ✅ Price quote received
-   Networks available: base-sepolia, base-mainnet
+   base-sepolia: 0.000123 USDC
 💰 Creating payment authorization for base-sepolia...
-   Amount required: 0.000123 USDC
-   Recipient: 0x1234567890123456789012345678901234567890
 ✍️  Signing authorization with EIP-712...
 ✅ Payment authorization created and signed
 📤 Uploading file (2048 bytes) with x402 payment...
 ✅ Upload successful!
-   Receipt: {
-     "id": "xyz789...",
-     "x402Payment": {
-       "paymentId": "550e8400-e29b-41d4-a716-446655440000",
-       "txHash": "0xabcd...",
-       "network": "base-sepolia",
-       "mode": "hybrid"
-     }
-   }
 
 ✨ Success! Your file has been uploaded and paid for with USDC.
+   Mode: RAW
+   Data Item ID: xyz789...
    View on Arweave: https://arweave.net/xyz789...
+
+💰 Payment Details:
+   Payment ID: 550e8400-e29b-41d4-a716-446655440000
+   Network: base-sepolia
+   Payment Mode: hybrid
+```
+
+#### Example Output (Signed Mode)
+
+```
+🚀 AR.IO x402 Upload Example
+   Mode: SIGNED
+   Network: base-sepolia
+   ...
+✍️  Creating and signing ANS-104 data item with Ethereum wallet...
+   Data item signed (2150 bytes)
+   Signature Type: 3 (Ethereum)
+📤 Uploading signed data item with x402 payment...
+✅ Upload successful!
+   Data Item ID: xyz789...
+   Signature Type: Ethereum (3)
+   ...
 ```
 
 #### Libraries Used
