@@ -84,9 +84,18 @@
           </div>
 
           <div class="stat-card">
+            <div class="stat-icon">💳</div>
+            <div class="stat-content">
+              <div class="stat-label">Traditional Payments</div>
+              <div class="stat-value" id="traditional-total">--</div>
+              <div class="stat-meta" id="traditional-count">--</div>
+            </div>
+          </div>
+
+          <div class="stat-card">
             <div class="stat-icon">💰</div>
             <div class="stat-content">
-              <div class="stat-label">x402 Payments</div>
+              <div class="stat-label">x402 Payments (USDC)</div>
               <div class="stat-value" id="x402-total">--</div>
               <div class="stat-meta" id="x402-count">--</div>
             </div>
@@ -104,11 +113,11 @@
           </div>
         </section>
 
-        <!-- Payment Modes Distribution -->
+        <!-- Traditional Payment Types Distribution -->
         <section class="section chart-section">
-          <h2>Payment Modes</h2>
+          <h2>Traditional Payment Types</h2>
           <div class="chart-container">
-            <canvas id="payment-mode-chart"></canvas>
+            <canvas id="payment-type-chart"></canvas>
           </div>
         </section>
       </div>
@@ -152,11 +161,31 @@
         </div>
       </section>
 
-      <!-- Recent Payments -->
+      <!-- Recent Traditional Payments -->
       <section class="section">
-        <h2>Recent x402 Payments</h2>
+        <h2>Recent Traditional Payments</h2>
         <div class="table-container">
-          <table id="recent-payments-table">
+          <table id="recent-traditional-payments-table">
+            <!-- Populated by JS -->
+          </table>
+        </div>
+      </section>
+
+      <!-- Recent x402 Payments -->
+      <section class="section">
+        <h2>Recent x402 Payments (USDC)</h2>
+        <div class="table-container">
+          <table id="recent-x402-payments-table">
+            <!-- Populated by JS -->
+          </table>
+        </div>
+      </section>
+
+      <!-- Recent Bundles -->
+      <section class="section">
+        <h2>Recent Bundles</h2>
+        <div class="table-container">
+          <table id="recent-bundles-table">
             <!-- Populated by JS -->
           </table>
         </div>

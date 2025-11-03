@@ -101,11 +101,16 @@ export async function seedBundleHandler(
 
   await database.insertSeededBundle(bundleId);
 
-  // Enqueue verify job to confirm bundle was mined and move to permanent storage
+  // Enqueue verify job with 5 minute delay to allow gateway indexing
+  // This ensures the bundle transaction is indexed before verification
   const { enqueue } = await import("../arch/queues");
   const { jobLabels } = await import("../constants");
-  await enqueue(jobLabels.verifyBundle, { planId });
-  logger.info("Enqueued verify job", { planId });
+  const verifyDelayMs = 5 * 60 * 1000; // 5 minutes
+  await enqueue(jobLabels.verifyBundle, { planId }, { delay: verifyDelayMs });
+  logger.info("Enqueued verify job with delay", {
+    planId,
+    delayMinutes: 5,
+  });
 }
 
 // Legacy SQS handler - now using BullMQ workers in src/workers/allWorkers.ts

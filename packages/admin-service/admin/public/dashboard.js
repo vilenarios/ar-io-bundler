@@ -51,7 +51,9 @@ async function fetchStats() {
     updateQueueStatus(stats.system.queues);
     updateTopUploaders(stats.uploads.topUploaders);
     updateRecentUploads(stats.uploads.recentUploads);
-    updateRecentPayments(stats.payments.recentPayments);
+    updateRecentTraditionalPayments(stats.payments?.recentPayments || []);
+    updateRecentX402Payments(stats.x402Payments?.recentPayments || []);
+    updateRecentBundles(stats.bundles?.recentPermanent || []);
 
     // Update last refresh time
     updateLastRefresh(stats.timestamp, stats._cached, stats._cacheAge);
@@ -129,11 +131,21 @@ function updateOverviewCards(stats) {
   document.getElementById('users-today').textContent =
     `${stats.uploads.today.uniqueUploaders} today`;
 
-  // x402 payments
+  // Traditional payments (from payment_service - x402_payment_transaction table)
+  const traditionalTotal = stats.payments?.x402Payments?.totalUSDC || '0.000000';
+  const traditionalCount = stats.payments?.x402Payments?.totalCount || 0;
+  document.getElementById('traditional-total').textContent =
+    `$${parseFloat(traditionalTotal).toLocaleString()}`;
+  document.getElementById('traditional-count').textContent =
+    `${traditionalCount.toLocaleString()} payments`;
+
+  // x402 payments (from upload_service - x402_payments table)
+  const x402Total = stats.x402Payments?.total?.totalUSDC || '0.000000';
+  const x402Count = stats.x402Payments?.total?.totalCount || 0;
   document.getElementById('x402-total').textContent =
-    `$${parseFloat(stats.payments.x402Payments.totalUSDC).toLocaleString()}`;
+    `$${parseFloat(x402Total).toLocaleString()}`;
   document.getElementById('x402-count').textContent =
-    `${stats.payments.x402Payments.totalCount.toLocaleString()} payments`;
+    `${x402Count.toLocaleString()} payments`;
 }
 
 /**
@@ -141,8 +153,8 @@ function updateOverviewCards(stats) {
  */
 function updateCharts(stats) {
   updateSignatureChart(stats.uploads.bySignatureType);
-  updatePaymentModeChart(stats.payments.x402Payments.byMode);
-  updateNetworkChart(stats.payments.x402Payments.byNetwork);
+  updatePaymentTypeChart(stats.payments?.x402Payments?.byMode || {});
+  updateNetworkChart(stats.x402Payments?.byNetwork || {});
 }
 
 /**
@@ -208,10 +220,10 @@ function updateSignatureChart(byType) {
 }
 
 /**
- * Update payment mode distribution chart (Pie)
+ * Update traditional payment type distribution chart (Pie)
  */
-function updatePaymentModeChart(byMode) {
-  const ctx = document.getElementById('payment-mode-chart').getContext('2d');
+function updatePaymentTypeChart(byMode) {
+  const ctx = document.getElementById('payment-type-chart').getContext('2d');
 
   const data = Object.entries(byMode).map(([mode, data]) => ({
     label: mode.toUpperCase(),
@@ -268,6 +280,9 @@ function updatePaymentModeChart(byMode) {
   }
   paymentModeChart = new Chart(ctx, config);
 }
+
+// For backward compatibility, keep the old name as an alias
+const updatePaymentModeChart = updatePaymentTypeChart;
 
 /**
  * Update network distribution chart (Bar)
@@ -472,13 +487,13 @@ function updateRecentUploads(uploads) {
 }
 
 /**
- * Update recent payments table
+ * Update recent traditional payments table (from payment_service)
  */
-function updateRecentPayments(payments) {
-  const table = document.getElementById('recent-payments-table');
+function updateRecentTraditionalPayments(payments) {
+  const table = document.getElementById('recent-traditional-payments-table');
 
-  if (payments.length === 0) {
-    table.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 40px; color: var(--text-secondary);">No recent payments</td></tr>';
+  if (!payments || payments.length === 0) {
+    table.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 40px; color: var(--text-secondary);">No recent traditional payments</td></tr>';
     return;
   }
 
@@ -498,8 +513,82 @@ function updateRecentPayments(payments) {
           <td><code>${truncateId(p.paymentId)}</code></td>
           <td>${formatNetworkName(p.network)}</td>
           <td style="text-align: right;">${p.amount}</td>
-          <td><span class="badge">${p.mode.toUpperCase()}</span></td>
+          <td><span class="badge">${p.mode ? p.mode.toUpperCase() : 'N/A'}</span></td>
           <td>${formatTime(p.timestamp)}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  `;
+}
+
+/**
+ * Update recent x402 payments table (from upload_service)
+ */
+function updateRecentX402Payments(payments) {
+  const table = document.getElementById('recent-x402-payments-table');
+
+  if (!payments || payments.length === 0) {
+    table.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 40px; color: var(--text-secondary);">No recent x402 payments</td></tr>';
+    return;
+  }
+
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>Payment ID</th>
+        <th>TX Hash</th>
+        <th>Network</th>
+        <th style="text-align: right;">Amount</th>
+        <th>Data Size</th>
+        <th>Time</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${payments.map(p => `
+        <tr>
+          <td><code>${truncateId(p.paymentId)}</code></td>
+          <td><code>${truncateId(p.txHash)}</code></td>
+          <td>${formatNetworkName(p.network)}</td>
+          <td style="text-align: right;">${p.amount}</td>
+          <td>${p.bytesFormatted}</td>
+          <td>${formatTime(p.timestamp)}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  `;
+}
+
+/**
+ * Update recent bundles table
+ */
+function updateRecentBundles(bundles) {
+  const table = document.getElementById('recent-bundles-table');
+
+  if (!bundles || bundles.length === 0) {
+    table.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 40px; color: var(--text-secondary);">No recent bundles</td></tr>';
+    return;
+  }
+
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>Bundle ID</th>
+        <th>Status</th>
+        <th style="text-align: right;">Size</th>
+        <th>Block Height</th>
+        <th>Posted</th>
+        <th>Verified</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${bundles.map(b => `
+        <tr>
+          <td><code>${truncateId(b.bundleId)}</code></td>
+          <td><span class="badge ${b.status === 'permanent' ? 'badge-success' : 'badge-info'}">${b.status.toUpperCase()}</span></td>
+          <td style="text-align: right;">${b.payloadSizeFormatted}</td>
+          <td>${b.blockHeight || 'Pending'}</td>
+          <td>${formatTime(b.postedDate)}</td>
+          <td>${b.permanentDate ? formatTime(b.permanentDate) : 'Pending'}</td>
         </tr>
       `).join('')}
     </tbody>

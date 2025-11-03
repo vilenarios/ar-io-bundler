@@ -7,6 +7,8 @@
 
 const { getUploadStats } = require('./queries/uploadStats');
 const { getPaymentStats } = require('../../payment-service/admin/queries/paymentStats');
+const { getX402Stats } = require('./queries/x402Stats');
+const { getBundleStats } = require('./queries/bundleStats');
 const { getSystemHealth } = require('./queries/systemHealth');
 const Redis = require('ioredis');
 const Knex = require('knex');
@@ -128,7 +130,7 @@ async function getStats(queues = []) {
   console.log('📊 Computing admin dashboard stats...');
 
   try {
-    const [uploadStats, paymentStats, systemHealth] = await Promise.all([
+    const [uploadStats, paymentStats, x402Stats, bundleStats, systemHealth] = await Promise.all([
       getUploadStats(uploadDb).catch(err => {
         console.error('Failed to get upload stats:', err);
         return getEmptyUploadStats();
@@ -136,6 +138,14 @@ async function getStats(queues = []) {
       getPaymentStats(paymentDb).catch(err => {
         console.error('Failed to get payment stats:', err);
         return getEmptyPaymentStats();
+      }),
+      getX402Stats(uploadDb).catch(err => {
+        console.error('Failed to get x402 stats:', err);
+        return getEmptyX402Stats();
+      }),
+      getBundleStats(uploadDb).catch(err => {
+        console.error('Failed to get bundle stats:', err);
+        return getEmptyBundleStats();
       }),
       getSystemHealth({
         uploadDb,
@@ -156,6 +166,8 @@ async function getStats(queues = []) {
       system: systemHealth,
       uploads: uploadStats,
       payments: paymentStats,
+      x402Payments: x402Stats,
+      bundles: bundleStats,
       _cached: false
     };
 
@@ -262,6 +274,42 @@ function getEmptySystemHealth() {
       totalWaiting: 0,
       totalFailed: 0,
       byQueue: []
+    }
+  };
+}
+
+/**
+ * Get empty x402 stats (fallback for errors)
+ */
+function getEmptyX402Stats() {
+  return {
+    total: {
+      totalCount: 0,
+      totalUSDC: '0.000000',
+      averagePayment: '0.000000',
+      totalBytes: 0,
+      totalBytesFormatted: '0 B',
+      uniquePayers: 0
+    },
+    byNetwork: {},
+    topPayers: [],
+    recentPayments: []
+  };
+}
+
+/**
+ * Get empty bundle stats (fallback for errors)
+ */
+function getEmptyBundleStats() {
+  return {
+    recentPermanent: [],
+    recentPosted: [],
+    recentFailed: [],
+    planning: {
+      totalPlanned: 0,
+      totalPermanent: 0,
+      totalPosted: 0,
+      totalFailed: 0
     }
   };
 }

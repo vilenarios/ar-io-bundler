@@ -52,7 +52,8 @@ export type QueueType = keyof QueueTypeToMessageType;
 
 export const enqueue = async <T extends QueueType>(
   queueType: T,
-  message: QueueTypeToMessageType[T]
+  message: QueueTypeToMessageType[T],
+  options?: { delay?: number; timeout?: number }
 ) => {
   const queue = getQueue(queueType);
 
@@ -60,6 +61,14 @@ export const enqueue = async <T extends QueueType>(
   const jobOptions: Record<string, unknown> = {};
   if (queueType === jobLabels.seedBundle) {
     jobOptions.timeout = 300000; // 5 minutes for seed jobs
+  }
+
+  // Apply custom options if provided
+  if (options?.delay) {
+    jobOptions.delay = options.delay;
+  }
+  if (options?.timeout) {
+    jobOptions.timeout = options.timeout;
   }
 
   await queue.add(queueType, message, jobOptions);

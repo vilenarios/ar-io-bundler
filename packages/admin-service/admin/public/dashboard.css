@@ -430,6 +430,27 @@ code {
   font-size: 13px;
 }
 
+/* Badge Styles */
+.badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badge-success {
+  background: #10b981;
+  color: white;
+}
+
+.badge-info {
+  background: #06b6d4;
+  color: white;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .navbar {
