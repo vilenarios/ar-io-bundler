@@ -367,13 +367,13 @@ This codebase was completely migrated from AWS to open-source infrastructure:
 
 ## Known Issues and Recent Changes
 
-**Recent Major Changes** (October 2025):
+**Recent Major Changes** (November 2025):
 - ✅ **Complete AWS Migration**: All AWS services replaced with open-source alternatives (DynamoDB→PostgreSQL, SQS→BullMQ, Lambda→PM2, S3→MinIO)
 - ✅ **Vertical Integration**: Full integration with local AR.IO Gateway for pricing and bundle posting
 - ✅ **x402 Protocol**: Coinbase HTTP 402 payment standard implementation (see below)
 - ✅ **BullMQ Migration**: Complete transition from AWS Lambda/SQS to PM2-managed BullMQ workers
 
-**X402 Integration Status** (October 2025):
+**X402 Integration Status** (November 2025):
 - ✅ **Fully implemented and working** - All TypeScript errors resolved
 - ✅ **Core implementation complete** - Database methods, routes, and service layer implemented
 - ✅ **Tests fixed** - All x402 tests now compile and pass type checking
@@ -403,10 +403,13 @@ This codebase was completely migrated from AWS to open-source infrastructure:
 
 ## Documentation
 
-- **Root README.md**: Quick start and feature overview
+- **Root README.md**: Administrator quick setup guide, vertical integration instructions, and troubleshooting
+- **CLAUDE.md** (this file): Repository-wide development guidance and architecture overview
 - **docs/architecture/ARCHITECTURE.md**: Comprehensive architecture documentation (1979 lines)
 - **packages/payment-service/CLAUDE.md**: Payment service implementation details
 - **packages/upload-service/CLAUDE.md**: Upload service implementation details
+- **VERTICALLY_INTEGRATED_STATUS.md**: Complete vertical integration status with AR.IO Gateway
+- **FEE_CONFIGURATION_GUIDE.md**: Comprehensive fee structure configuration guide
 - **docs/setup/**: Installation guides
 - **docs/operations/**: Production deployment and monitoring
 - **docs/api/**: API reference documentation

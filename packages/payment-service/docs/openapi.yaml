@@ -15,12 +15,20 @@ tags:
     description: Payment processing and top-up operations
   - name: x402
     description: x402 protocol payment endpoints (EIP-3009 USDC payments)
+  - name: ArNS
+    description: Arweave Name System (ArNS) registration and management
   - name: Currencies
     description: Supported currencies and exchange rates
   - name: Redemption
     description: Credit redemption and gift processing
   - name: Approvals
     description: Credit sharing and approval management
+  - name: Protected
+    description: Protected routes for inter-service communication (requires PRIVATE_ROUTE_SECRET)
+  - name: Webhooks
+    description: Webhook endpoints for external payment providers
+  - name: System
+    description: System health and monitoring endpoints
   - name: Info
     description: Service information and metadata
 
@@ -476,6 +484,137 @@ components:
           type: string
           description: Error message if success is false
           example: "Payment not found"
+
+    ArNSIntent:
+      type: string
+      description: Intent for ArNS name operation
+      enum: [buy-record, upgrade-name, extend-lease, increase-undername-limit]
+      example: "buy-record"
+
+    ArNSNameType:
+      type: string
+      description: Type of ArNS name
+      enum: [lease, permabuy]
+      example: "lease"
+
+    ArNSPurchaseReceipt:
+      type: object
+      description: Receipt for an ArNS name purchase transaction
+      properties:
+        nonce:
+          type: string
+          format: uuid
+          description: Unique identifier for this purchase
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        name:
+          type: string
+          description: The ArNS name being purchased
+          example: "myname"
+        intent:
+          $ref: "#/components/schemas/ArNSIntent"
+        mARIOQty:
+          type: string
+          description: Quantity of mARIO tokens required
+          example: "1000000"
+        wincQty:
+          type: string
+          description: Equivalent Winston credits
+          example: "5000000000"
+        owner:
+          type: string
+          description: Arweave address of the name owner
+          example: "abcdefghijklmnopqrxtuvwxyz123456789ABCDEFGH"
+        processId:
+          type: string
+          description: AR.IO process ID (optional for permabuy)
+          example: "process123"
+        increaseQty:
+          type: integer
+          description: Quantity to increase (for increase-undername-limit)
+        type:
+          $ref: "#/components/schemas/ArNSNameType"
+        years:
+          type: integer
+          description: Number of years for lease
+          example: 1
+        messageId:
+          type: string
+          description: AR.IO message ID for the transaction
+          example: "msg123"
+        status:
+          type: string
+          description: Status of the purchase
+          enum: [PENDING, CONFIRMED, FAILED]
+          example: "PENDING"
+        usdArRate:
+          type: number
+          description: USD to AR exchange rate at time of purchase
+          example: 5.42
+        usdArioRate:
+          type: number
+          description: USD to ARIO exchange rate at time of purchase
+          example: 0.012
+
+    ArNSPurchaseQuote:
+      type: object
+      description: Quote for an ArNS name purchase via Stripe
+      properties:
+        nonce:
+          type: string
+          format: uuid
+          description: Unique identifier for this quote
+        name:
+          type: string
+          description: The ArNS name being quoted
+        intent:
+          $ref: "#/components/schemas/ArNSIntent"
+        mARIOQty:
+          type: string
+          description: mARIO tokens required
+        wincQty:
+          type: string
+          description: Winston credits equivalent
+        paymentAmount:
+          type: integer
+          description: Fiat payment amount in smallest currency unit
+        quotedPaymentAmount:
+          type: integer
+          description: Quoted payment amount before adjustments
+        currencyType:
+          type: string
+          description: Fiat currency type
+          example: "usd"
+        quoteExpirationDate:
+          type: string
+          format: date-time
+          description: When this quote expires
+        paymentProvider:
+          type: string
+          example: "stripe"
+        excessWincAmount:
+          type: string
+          description: Excess winc if payment exceeds minimum
+        adjustments:
+          $ref: "#/components/schemas/Adjustment"
+
+    CheckBalanceResult:
+      type: object
+      description: Result of balance sufficiency check
+      properties:
+        userHasSufficientBalance:
+          type: boolean
+          description: Whether user has sufficient balance
+          example: true
+        bytesCostInWinc:
+          type: string
+          description: Cost in Winston for the byte count
+          example: "1000000"
+        userBalanceInWinc:
+          type: string
+          description: User's current balance in Winston
+          example: "5000000"
+        adjustments:
+          $ref: "#/components/schemas/Adjustment"
 
 paths:
   # winc Price for ByteCount of Data Items
@@ -1848,3 +1987,1062 @@ paths:
                   gateway:
                     type: string
                     example: https://arweave.net/
+
+  # ArNS (Arweave Name System) Endpoints
+  /arns/price/{intent}/{name}:
+    get:
+      tags:
+        - ArNS
+      summary: Get price for ArNS name registration or operation
+      description: |
+        Returns the mARIO (AR.IO token) and Winston credit cost for an ArNS name operation.
+
+        Optionally includes a fiat currency estimate if the `currency` query parameter is provided.
+
+        **Supported Intents:**
+        - **buy-record**: Purchase a new ArNS name
+        - **upgrade-name**: Upgrade a lease to permabuy
+        - **extend-lease**: Extend the lease duration
+        - **increase-undername-limit**: Increase the number of permitted undernames
+
+      parameters:
+        - name: x-signature
+          in: header
+          required: false
+          schema:
+            $ref: "#/components/schemas/SignatureHeader"
+        - name: x-nonce
+          in: header
+          required: false
+          schema:
+            $ref: "#/components/schemas/NonceHeader"
+        - name: x-public-key
+          in: header
+          required: false
+          schema:
+            $ref: "#/components/schemas/PublicKeyHeader"
+        - name: intent
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ArNSIntent"
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            description: The ArNS name (without .ar suffix)
+            example: "myname"
+        - name: currency
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/CurrencyType"
+          description: If provided, includes a fiat currency estimate in the response
+        - name: years
+          in: query
+          required: false
+          schema:
+            type: integer
+            description: Number of years for lease (required for buy-record and extend-lease)
+            example: 1
+        - name: type
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ArNSNameType"
+          description: Type of name registration (required for buy-record)
+        - name: increaseQty
+          in: query
+          required: false
+          schema:
+            type: integer
+            description: Quantity to increase (required for increase-undername-limit)
+        - name: processId
+          in: query
+          required: false
+          schema:
+            type: string
+            description: AR.IO process ID (optional)
+
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mARIO:
+                    type: string
+                    description: mARIO token cost
+                    example: "1000000"
+                  winc:
+                    type: string
+                    description: Winston credit cost
+                    example: "5000000000"
+                  fiatEstimate:
+                    type: object
+                    description: Fiat estimate (only if currency parameter provided)
+                    properties:
+                      paymentAmount:
+                        type: integer
+                        description: Payment amount in smallest currency unit
+                      quotedPaymentAmount:
+                        type: integer
+                        description: Quoted amount before adjustments
+                      excessWincAmount:
+                        type: string
+                        description: Excess winc if payment exceeds minimum
+                      adjustments:
+                        $ref: "#/components/schemas/Adjustment"
+                      fees:
+                        $ref: "#/components/schemas/Adjustment"
+
+        "400":
+          description: Bad Request
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Invalid ArNS name"
+
+        "503":
+          description: Service Unavailable
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Price Oracle Unavailable"
+
+  /arns/purchase/{intent}/{name}:
+    post:
+      tags:
+        - ArNS
+      summary: Initiate ArNS name purchase using account balance
+      description: |
+        Initiates an ArNS name purchase transaction using the user's Winston credit balance.
+
+        This deducts credits from the user's account and submits the transaction to the AR.IO network.
+
+        **Requirements:**
+        - User must have sufficient balance to cover the mARIO cost
+        - Name must be available (checked by AR.IO network)
+        - All required parameters must be provided based on the intent
+
+      parameters:
+        - name: x-signature
+          in: header
+          required: true
+          schema:
+            $ref: "#/components/schemas/SignatureHeader"
+        - name: x-nonce
+          in: header
+          required: true
+          schema:
+            $ref: "#/components/schemas/NonceHeader"
+        - name: x-public-key
+          in: header
+          required: true
+          schema:
+            $ref: "#/components/schemas/PublicKeyHeader"
+        - name: intent
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ArNSIntent"
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            description: The ArNS name (without .ar suffix)
+        - name: owner
+          in: query
+          required: true
+          schema:
+            type: string
+            description: Arweave address that will own the name
+        - name: years
+          in: query
+          required: false
+          schema:
+            type: integer
+            description: Number of years (required for lease purchases)
+        - name: type
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ArNSNameType"
+          description: Name type (required for buy-record)
+        - name: increaseQty
+          in: query
+          required: false
+          schema:
+            type: integer
+            description: Increase quantity (required for increase-undername-limit)
+        - name: processId
+          in: query
+          required: false
+          schema:
+            type: string
+            description: AR.IO process ID
+
+      responses:
+        "200":
+          description: OK - Purchase initiated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  purchaseReceipt:
+                    $ref: "#/components/schemas/ArNSPurchaseReceipt"
+                  arioWriteResult:
+                    type: object
+                    description: AR.IO network transaction result
+                    properties:
+                      id:
+                        type: string
+                        description: AR.IO message ID
+                        example: "msg123"
+
+        "400":
+          description: Bad Request
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Invalid parameters"
+
+        "401":
+          description: Unauthorized
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Invalid signature"
+
+        "402":
+          description: Payment Required - Insufficient balance
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Insufficient balance"
+
+        "503":
+          description: Service Unavailable
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "AR.IO network unavailable"
+
+  /arns/purchase/{nonce}:
+    get:
+      tags:
+        - ArNS
+      summary: Get ArNS purchase status
+      description: |
+        Retrieves the status of an ArNS purchase transaction by its nonce (unique ID).
+
+        Use this endpoint to track the progress of a purchase initiated via POST /arns/purchase.
+
+      parameters:
+        - name: nonce
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            description: The unique nonce returned when the purchase was initiated
+
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArNSPurchaseReceipt"
+
+        "400":
+          description: Bad Request
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Purchase status not found"
+
+        "503":
+          description: Service Unavailable
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Database unavailable"
+
+  /arns/quote/{method}/{address}/{currency}/{intent}/{name}:
+    get:
+      tags:
+        - ArNS
+      summary: Get Stripe payment quote for ArNS name purchase
+      description: |
+        Creates a Stripe payment session (checkout or payment intent) for purchasing an ArNS name with fiat currency.
+
+        This endpoint:
+        1. Calculates the mARIO and Winston credit cost
+        2. Converts to the requested fiat currency
+        3. Creates a Stripe payment session
+        4. Stores a quote in the database
+        5. Returns both the quote and payment session
+
+        **Payment Methods:**
+        - **checkout-session**: Full Stripe Checkout experience (redirects to Stripe)
+        - **payment-intent**: Embedded payment flow (integrate in your UI)
+
+      parameters:
+        - name: x-signature
+          in: header
+          required: false
+          schema:
+            $ref: "#/components/schemas/SignatureHeader"
+        - name: x-nonce
+          in: header
+          required: false
+          schema:
+            $ref: "#/components/schemas/NonceHeader"
+        - name: x-public-key
+          in: header
+          required: false
+          schema:
+            $ref: "#/components/schemas/PublicKeyHeader"
+        - name: method
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [checkout-session, payment-intent]
+            description: Stripe payment method type
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+            description: Destination Arweave address
+        - name: currency
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/CurrencyType"
+        - name: intent
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ArNSIntent"
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            description: The ArNS name (without .ar suffix)
+        - name: promoCode
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/PromoCode"
+        - name: uiMode
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/UiMode"
+        - name: returnUrl
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReturnUrl"
+        - name: successUrl
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/SuccessUrl"
+        - name: cancelUrl
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/CancelUrl"
+        - name: years
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: type
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ArNSNameType"
+        - name: increaseQty
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: processId
+          in: query
+          required: false
+          schema:
+            type: string
+
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  purchaseQuote:
+                    $ref: "#/components/schemas/ArNSPurchaseQuote"
+                  paymentSession:
+                    $ref: "#/components/schemas/PaymentSession"
+                  adjustments:
+                    $ref: "#/components/schemas/Adjustment"
+                  fees:
+                    $ref: "#/components/schemas/Adjustment"
+
+        "400":
+          description: Bad Request
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Invalid parameters"
+
+        "503":
+          description: Service Unavailable
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Stripe unavailable"
+
+  # Protected Routes (Inter-Service Communication)
+  /reserve-balance/{token}/{signerAddress}:
+    get:
+      tags:
+        - Protected
+      summary: Reserve user balance for data upload
+      description: |
+        **PROTECTED ROUTE** - Requires `PRIVATE_ROUTE_SECRET` authentication header.
+
+        Reserves Winston credits from a user's balance for an upcoming data upload.
+        Called by the upload service before accepting a data item upload.
+
+        The reservation is temporary and will be:
+        - Finalized (deducted) when upload completes successfully
+        - Refunded if upload fails or is canceled
+
+        **Authorization:** `x-auth-token` header must match `PRIVATE_ROUTE_SECRET` environment variable.
+
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: true
+          schema:
+            type: string
+            description: Must match PRIVATE_ROUTE_SECRET
+        - name: token
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/TokenType"
+          description: Currently unused (kept for backward compatibility)
+        - name: signerAddress
+          in: path
+          required: true
+          schema:
+            type: string
+            description: User's wallet address
+        - name: byteCount
+          in: query
+          required: true
+          schema:
+            type: integer
+            description: Number of bytes being uploaded
+        - name: dataItemId
+          in: query
+          required: true
+          schema:
+            type: string
+            description: Data item ID for the upload
+        - name: paidBy
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Comma-separated list of addresses paying (delegated payment)
+        - name: paymentDirective
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Payment directive (e.g., x402 payment ID)
+
+      responses:
+        "200":
+          description: OK - Balance reserved successfully
+          content:
+            text/plain:
+              schema:
+                type: string
+                description: Reserved Winston amount
+                example: "1000000"
+
+        "400":
+          description: Bad Request
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Invalid parameters"
+
+        "401":
+          description: Unauthorized
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Invalid authorization token"
+
+        "402":
+          description: Payment Required - Insufficient balance
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Insufficient balance"
+
+        "404":
+          description: Not Found - User does not exist
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "User not found"
+
+        "503":
+          description: Service Unavailable
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Error reserving balance"
+
+  /refund-balance/{token}/{signerAddress}:
+    get:
+      tags:
+        - Protected
+      summary: Refund previously reserved balance
+      description: |
+        **PROTECTED ROUTE** - Requires `PRIVATE_ROUTE_SECRET` authentication header.
+
+        Refunds Winston credits that were previously reserved for a data upload.
+        Called by the upload service when an upload fails or is canceled.
+
+        **Authorization:** `x-auth-token` header must match `PRIVATE_ROUTE_SECRET` environment variable.
+
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: true
+          schema:
+            type: string
+            description: Must match PRIVATE_ROUTE_SECRET
+        - name: token
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/TokenType"
+          description: Currently unused (kept for backward compatibility)
+        - name: signerAddress
+          in: path
+          required: true
+          schema:
+            type: string
+            description: User's wallet address
+        - name: winstonCredits
+          in: query
+          required: true
+          schema:
+            type: string
+            description: Winston amount to refund
+        - name: dataItemId
+          in: query
+          required: true
+          schema:
+            type: string
+            description: Data item ID for the failed/canceled upload
+
+      responses:
+        "200":
+          description: OK - Balance refunded successfully
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Balance refunded"
+
+        "400":
+          description: Bad Request
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Invalid parameters"
+
+        "401":
+          description: Unauthorized
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Invalid authorization token"
+
+        "404":
+          description: Not Found - User does not exist
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "User not found"
+
+        "503":
+          description: Service Unavailable
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Error refunding balance"
+
+  /check-balance/{token}/{signerAddress}:
+    get:
+      tags:
+        - Protected
+      summary: Check if user has sufficient balance
+      description: |
+        **PROTECTED ROUTE** - Requires `PRIVATE_ROUTE_SECRET` authentication header.
+
+        Checks whether a user has sufficient Winston credits for a given byte count upload.
+        Called by the upload service before accepting a data upload.
+
+        **Authorization:** `x-auth-token` header must match `PRIVATE_ROUTE_SECRET` environment variable.
+
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: true
+          schema:
+            type: string
+            description: Must match PRIVATE_ROUTE_SECRET
+        - name: token
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/TokenType"
+          description: Currently unused (kept for backward compatibility)
+        - name: signerAddress
+          in: path
+          required: true
+          schema:
+            type: string
+            description: User's wallet address
+        - name: byteCount
+          in: query
+          required: true
+          schema:
+            type: integer
+            description: Number of bytes to check
+        - name: paidBy
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Comma-separated list of addresses paying (delegated payment)
+
+      responses:
+        "200":
+          description: OK - User has sufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckBalanceResult"
+
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckBalanceResult"
+
+        "401":
+          description: Unauthorized
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Invalid authorization token"
+
+        "402":
+          description: Payment Required - Insufficient balance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckBalanceResult"
+
+        "404":
+          description: Not Found - User does not exist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckBalanceResult"
+
+        "503":
+          description: Service Unavailable
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Error checking balance"
+
+  /account/approvals/create:
+    get:
+      tags:
+        - Protected
+      summary: Create delegated payment approval
+      description: |
+        **PROTECTED ROUTE** - Requires `PRIVATE_ROUTE_SECRET` authentication header.
+
+        Creates an approval allowing another address to spend credits from the paying address's balance.
+        This enables delegated payment scenarios where one user pays for another user's uploads.
+
+        **Authorization:** `x-auth-token` header must match `PRIVATE_ROUTE_SECRET` environment variable.
+
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: true
+          schema:
+            type: string
+            description: Must match PRIVATE_ROUTE_SECRET
+        - name: payingAddress
+          in: query
+          required: true
+          schema:
+            type: string
+            description: Address that will pay
+        - name: approvedAddress
+          in: query
+          required: true
+          schema:
+            type: string
+            description: Address that is approved to spend
+        - name: approvedWincAmount
+          in: query
+          required: true
+          schema:
+            type: string
+            description: Winston amount approved
+        - name: approvalDataItemId
+          in: query
+          required: true
+          schema:
+            type: string
+            description: Data item ID for the approval
+        - name: expirationDate
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+            description: When the approval expires
+
+      responses:
+        "200":
+          description: OK - Approval created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Created approval details
+
+        "400":
+          description: Bad Request
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Invalid parameters"
+
+        "401":
+          description: Unauthorized
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Invalid authorization token"
+
+        "402":
+          description: Payment Required - Insufficient balance
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Insufficient balance"
+
+        "503":
+          description: Service Unavailable
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Error creating approval"
+
+  /account/approvals/revoke:
+    get:
+      tags:
+        - Protected
+      summary: Revoke delegated payment approvals
+      description: |
+        **PROTECTED ROUTE** - Requires `PRIVATE_ROUTE_SECRET` authentication header.
+
+        Revokes one or more delegated payment approvals, preventing the approved address from
+        spending any more credits from the paying address.
+
+        **Authorization:** `x-auth-token` header must match `PRIVATE_ROUTE_SECRET` environment variable.
+
+      parameters:
+        - name: x-auth-token
+          in: header
+          required: true
+          schema:
+            type: string
+            description: Must match PRIVATE_ROUTE_SECRET
+        - name: payingAddress
+          in: query
+          required: true
+          schema:
+            type: string
+            description: Address that pays
+        - name: approvedAddress
+          in: query
+          required: true
+          schema:
+            type: string
+            description: Address whose approval is being revoked
+        - name: revokeDataItemId
+          in: query
+          required: true
+          schema:
+            type: string
+            description: Data item ID for the revocation
+
+      responses:
+        "200":
+          description: OK - Approvals revoked successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                description: Revoked approval details
+                items:
+                  type: object
+
+        "400":
+          description: Bad Request
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Invalid parameters"
+
+        "401":
+          description: Unauthorized
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Invalid authorization token"
+
+        "503":
+          description: Service Unavailable
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Error revoking approvals"
+
+  # Webhook Endpoints
+  /stripe-webhook:
+    post:
+      tags:
+        - Webhooks
+      summary: Stripe webhook for payment events
+      description: |
+        Receives webhook events from Stripe when payment events occur.
+
+        **Supported Events:**
+        - `payment_intent.succeeded` - Payment completed successfully, credits user's account
+        - `charge.dispute.created` - Payment disputed, deducts credits if already credited
+
+        **Security:** Webhook signature verification using Stripe webhook secret.
+
+        **NOTE:** This endpoint is called directly by Stripe servers, not by clients.
+
+      requestBody:
+        required: true
+        description: Stripe webhook event payload
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Stripe Event object
+
+      responses:
+        "200":
+          description: OK - Event received and processed
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "OK"
+
+        "400":
+          description: Bad Request - Invalid signature
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Webhook Error!"
+
+  # System Endpoints
+  /health:
+    get:
+      tags:
+        - System
+      summary: Health check endpoint
+      description: |
+        Simple health check endpoint that returns "OK" if the service is running.
+
+        Use this for:
+        - Load balancer health checks
+        - Monitoring/alerting systems
+        - Service discovery
+
+      responses:
+        "200":
+          description: OK - Service is healthy
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "OK"
+
+  /metrics:
+    get:
+      tags:
+        - System
+      summary: Prometheus metrics endpoint
+      description: |
+        Returns Prometheus-formatted metrics for monitoring and observability.
+
+        **Metrics Included:**
+        - Default Node.js process metrics (CPU, memory, event loop, etc.)
+        - Custom application metrics (payment success/failure counts, etc.)
+
+        **Usage:** Configure Prometheus to scrape this endpoint periodically.
+
+      responses:
+        "200":
+          description: OK - Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+                description: Prometheus text exposition format
+                example: |
+                  # HELP process_cpu_user_seconds_total Total user CPU time spent in seconds.
+                  # TYPE process_cpu_user_seconds_total counter
+                  process_cpu_user_seconds_total 0.123
+
+  # Legacy/Compatibility Endpoints (not under /v1)
+  /price/{token}/{amount}:
+    servers:
+      - url: /
+    get:
+      tags:
+        - Pricing
+      summary: Arweave-compatible price endpoint (legacy)
+      description: |
+        **Legacy endpoint for ArConnect and ecosystem tool compatibility.**
+
+        Returns the raw Winston credit amount as a plain string (not JSON).
+        This matches the format expected by ArConnect and other Arweave ecosystem tools.
+
+        **Differences from /v1/price/bytes/{byteCount}:**
+        - Returns plain string instead of JSON
+        - No adjustments metadata
+        - Kept for backward compatibility with existing tools
+
+      parameters:
+        - name: x-signature
+          in: header
+          required: false
+          schema:
+            $ref: "#/components/schemas/SignatureHeader"
+        - name: x-nonce
+          in: header
+          required: false
+          schema:
+            $ref: "#/components/schemas/NonceHeader"
+        - name: x-public-key
+          in: header
+          required: false
+          schema:
+            $ref: "#/components/schemas/PublicKeyHeader"
+        - name: token
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/TokenType"
+          description: Currently unused, kept for compatibility
+        - name: amount
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ByteCount"
+          description: Number of bytes
+
+      responses:
+        "200":
+          description: OK
+          content:
+            text/plain:
+              schema:
+                type: string
+                description: Winston credit amount as a plain string
+                example: "1000000"
+
+        "400":
+          description: Bad Request
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Invalid byte count"
+
+        "503":
+          description: Service Unavailable
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Pricing Oracle Unavailable"
