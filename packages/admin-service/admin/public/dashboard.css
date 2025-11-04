@@ -475,3 +475,84 @@ code {
     grid-template-columns: 1fr;
   }
 }
+
+/* Copyable ID Styles */
+.copyable-id {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: #f3f4f6;
+  border: 1px solid transparent;
+}
+
+.copyable-id:hover {
+  background: #e5e7eb;
+  border-color: var(--primary-color);
+}
+
+.copyable-id code {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.85em;
+  color: var(--text-primary);
+  background: transparent;
+  padding: 0;
+}
+
+.copyable-id .copy-icon {
+  opacity: 0;
+  font-size: 0.9em;
+  transition: opacity 0.2s ease;
+}
+
+.copyable-id:hover .copy-icon {
+  opacity: 0.6;
+}
+
+.copyable-id .copy-feedback {
+  position: absolute;
+  top: -28px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #10b981;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 0.85em;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.copyable-id .copy-feedback::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 4px solid #10b981;
+}
+
+.copyable-id.copied .copy-feedback {
+  opacity: 1;
+}
+
+.copyable-id.copied {
+  background: #d1fae5;
+  border-color: #10b981;
+}
+
+/* Ensure copyable IDs work well in tables */
+table td .copyable-id {
+  margin: -4px 0;
+}

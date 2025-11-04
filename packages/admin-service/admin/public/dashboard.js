@@ -442,7 +442,7 @@ function updateTopUploaders(uploaders) {
     <tbody>
       ${uploaders.map(u => `
         <tr>
-          <td><code>${truncateAddress(u.address)}</code></td>
+          <td>${makeCopyable(u.address, null, 'address')}</td>
           <td style="text-align: right;">${u.uploadCount.toLocaleString()}</td>
           <td style="text-align: right;">${u.totalBytesFormatted}</td>
         </tr>
@@ -475,10 +475,10 @@ function updateRecentUploads(uploads) {
     <tbody>
       ${uploads.map(u => `
         <tr>
-          <td><code>${truncateId(u.id)}</code></td>
+          <td>${makeCopyable(u.id, null, 'data item ID')}</td>
           <td>${u.sizeFormatted}</td>
           <td>${u.signatureType}</td>
-          <td><code>${truncateAddress(u.owner)}</code></td>
+          <td>${makeCopyable(u.owner, null, 'address')}</td>
           <td>${formatTime(u.timestamp)}</td>
         </tr>
       `).join('')}
@@ -510,7 +510,7 @@ function updateRecentTraditionalPayments(payments) {
     <tbody>
       ${payments.map(p => `
         <tr>
-          <td><code>${truncateId(p.paymentId)}</code></td>
+          <td>${makeCopyable(p.paymentId, null, 'payment ID')}</td>
           <td>${formatNetworkName(p.network)}</td>
           <td style="text-align: right;">${p.amount}</td>
           <td><span class="badge">${p.mode ? p.mode.toUpperCase() : 'N/A'}</span></td>
@@ -546,8 +546,8 @@ function updateRecentX402Payments(payments) {
     <tbody>
       ${payments.map(p => `
         <tr>
-          <td><code>${truncateId(p.paymentId)}</code></td>
-          <td><code>${truncateId(p.txHash)}</code></td>
+          <td>${makeCopyable(p.paymentId, null, 'payment ID')}</td>
+          <td>${makeCopyable(p.txHash, null, 'transaction hash')}</td>
           <td>${formatNetworkName(p.network)}</td>
           <td style="text-align: right;">${p.amount}</td>
           <td>${p.bytesFormatted}</td>
@@ -583,7 +583,7 @@ function updateRecentBundles(bundles) {
     <tbody>
       ${bundles.map(b => `
         <tr>
-          <td><code>${truncateId(b.bundleId)}</code></td>
+          <td>${makeCopyable(b.bundleId, null, 'bundle ID')}</td>
           <td><span class="badge ${b.status === 'permanent' ? 'badge-success' : 'badge-info'}">${b.status.toUpperCase()}</span></td>
           <td style="text-align: right;">${b.payloadSizeFormatted}</td>
           <td>${b.blockHeight || 'Pending'}</td>
@@ -656,6 +656,77 @@ function truncateAddress(address) {
 function truncateId(id) {
   if (!id || id.length < 16) return id;
   return `${id.substring(0, 12)}...`;
+}
+
+/**
+ * Helper: Create copyable ID element with click-to-copy functionality
+ * @param {string} fullId - The full ID to be copied
+ * @param {string} displayText - The truncated text to display (optional, will truncate if not provided)
+ * @param {string} type - Type of ID for display purposes ('id', 'address', 'hash')
+ */
+function makeCopyable(fullId, displayText = null, type = 'id') {
+  if (!fullId) return fullId;
+
+  // Auto-truncate if no display text provided
+  const display = displayText || (type === 'address' ? truncateAddress(fullId) : truncateId(fullId));
+
+  // Generate unique ID for this element
+  const uniqueId = 'copy-' + Math.random().toString(36).substr(2, 9);
+
+  return `<span class="copyable-id"
+               onclick="copyToClipboard('${escapeHtml(fullId)}', '${uniqueId}')"
+               title="Click to copy full ${type}: ${escapeHtml(fullId)}"
+               id="${uniqueId}">
+            <code>${display}</code>
+            <span class="copy-icon">📋</span>
+            <span class="copy-feedback">✓ Copied!</span>
+          </span>`;
+}
+
+/**
+ * Copy text to clipboard and show feedback
+ */
+async function copyToClipboard(text, elementId) {
+  try {
+    await navigator.clipboard.writeText(text);
+
+    // Show success feedback
+    const element = document.getElementById(elementId);
+    if (element) {
+      element.classList.add('copied');
+      setTimeout(() => {
+        element.classList.remove('copied');
+      }, 2000);
+    }
+  } catch (err) {
+    console.error('Failed to copy:', err);
+    // Fallback for older browsers
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+
+    const element = document.getElementById(elementId);
+    if (element) {
+      element.classList.add('copied');
+      setTimeout(() => {
+        element.classList.remove('copied');
+      }, 2000);
+    }
+  }
+}
+
+/**
+ * Escape HTML to prevent XSS in title attributes
+ */
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 /**
