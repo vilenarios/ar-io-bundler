@@ -1,308 +1,614 @@
-# AR.IO Bundler Management Scripts
+# AR.IO Bundler Utility Scripts
 
-This directory contains scripts for managing the AR.IO Bundler services.
+This directory contains utility scripts for managing and monitoring the AR.IO Bundler services.
 
-## Quick Start
+## Table of Contents
 
-```bash
-# Start all services
-./scripts/start.sh
+- [Initial Setup](#initial-setup)
+- [Service Management](#service-management)
+- [Bundle Monitoring & Management](#bundle-monitoring--management)
+- [Database Management](#database-management)
+- [Maintenance & Cleanup](#maintenance--cleanup)
+- [Development](#development)
+- [Typical Workflows](#typical-workflows)
+- [System Architecture](#system-architecture)
 
-# Stop all services
-./scripts/stop.sh
+---
 
-# Restart all services
-./scripts/restart.sh
-```
+## Initial Setup
 
-## Available Scripts
+### `setup.sh`
+**Interactive setup wizard** that guides you through complete initial configuration.
 
-### `start.sh` - Start All Services
-
-Starts the complete AR.IO Bundler stack:
-- Checks and starts Docker infrastructure (PostgreSQL, Redis, MinIO)
-- Builds services if needed
-- Starts payment-service on port 4001 (2 instances)
-- Starts upload-api on port 3001 (2 instances)
-- Saves PM2 configuration
-
-**Prerequisites:**
-- Docker and Docker Compose installed
-- Wallet file at `./wallet.json`
-- Configuration files at `./packages/*/env`
-
-**Usage:**
-```bash
-./scripts/start.sh
-```
-
-**What it does:**
-1. ✅ Checks Docker infrastructure
-2. ✅ Builds if needed
-3. ✅ Validates wallet and config
-4. ✅ Starts services with explicit PORT configuration
-5. ✅ Saves PM2 state
-6. ✅ Shows service status and URLs
-
-### `stop.sh` - Stop All Services
-
-Stops all PM2-managed services without removing them from PM2.
-
-**Usage:**
-```bash
-./scripts/stop.sh
-```
-
-**Note:** Infrastructure (Docker) continues running. To stop infrastructure:
-```bash
-docker compose down
-```
-
-### `restart.sh` - Restart Services
-
-Restarts all running services (zero-downtime reload).
-
-**Usage:**
-```bash
-./scripts/restart.sh
-```
-
-### `migrate-all.sh` - Run Database Migrations
-
-Runs migrations for both payment and upload service databases.
-
-**Usage:**
-```bash
-./scripts/migrate-all.sh
-```
-
-### `setup.sh` - Initial Setup
-
-Initial project setup script (creates databases, runs migrations, etc.).
+**Features:**
+- Collects all required configuration values with validation
+- Generates secure random secrets (JWT_SECRET, PRIVATE_ROUTE_SECRET)
+- Creates complete `.env` files for both services
+- Validates wallet files and network connectivity
+- Optionally runs migrations and starts services
 
 **Usage:**
 ```bash
 ./scripts/setup.sh
 ```
 
-## Service Management
-
-### Starting Services
-```bash
-# Start everything with one command
-./scripts/start.sh
-
-# Start just infrastructure
-docker compose up -d
-
-# Start specific service manually
-cd packages/payment-service
-PORT=4001 NODE_ENV=production pm2 start lib/index.js --name payment-service -i 2
-```
-
-### Stopping Services
-```bash
-# Stop all services
-./scripts/stop.sh
-
-# Stop specific service
-pm2 stop payment-service
-pm2 stop upload-api
-
-# Stop infrastructure
-docker compose down
-```
-
-### Restarting Services
-```bash
-# Restart all services
-./scripts/restart.sh
-
-# Restart specific service
-pm2 restart payment-service
-pm2 restart upload-api
-
-# Graceful reload (zero-downtime)
-pm2 reload all
-```
-
-### Monitoring
-```bash
-# View all logs
-pm2 logs
-
-# View specific service logs
-pm2 logs payment-service
-pm2 logs upload-api
-
-# Real-time monitoring
-pm2 monit
-
-# Process list
-pm2 list
-
-# Service status
-pm2 show payment-service
-```
-
-## Port Configuration
-
-The scripts use **explicit PORT environment variables** to prevent conflicts with AR.IO Gateway:
-
-| Service | Port | Instances |
-|---------|------|-----------|
-| Payment Service | 4001 | 2 (cluster) |
-| Upload Service | 3001 | 2 (cluster) |
-
-**Reserved Ports (AR.IO Gateway):**
-- 3000: Gateway Envoy
-- 4000: Gateway Core
-- 5050: Gateway Observer
-
-**Infrastructure Ports:**
-- 5432: PostgreSQL
-- 6379: Redis Cache
-- 6381: Redis Queues
-- 9000: MinIO API
-- 9001: MinIO Console
-
-## Troubleshooting
-
-### Services won't start
-
-Check prerequisites:
-```bash
-# Check Docker
-docker ps
-
-# Check wallet
-ls -la wallet.json
-
-# Check .env files
-ls -la packages/payment-service/.env
-ls -la packages/upload-service/.env
-
-# Check builds
-ls -la packages/payment-service/lib
-ls -la packages/upload-service/lib
-```
-
-### Port conflicts
-
-Verify no other services are using bundler ports:
-```bash
-ss -tlnp | grep -E ":3001|:4001"
-```
-
-If ports are in use:
-```bash
-# Stop existing PM2 processes
-pm2 delete all
-
-# Kill processes on specific port
-lsof -ti:3001 | xargs kill -9
-lsof -ti:4001 | xargs kill -9
-```
-
-### View detailed logs
-
-```bash
-# Last 50 lines
-pm2 logs --lines 50
-
-# Specific service, last 100 lines
-pm2 logs payment-service --lines 100
-
-# Follow logs in real-time
-pm2 logs --lines 0
-```
-
-### Reset everything
-
-```bash
-# Stop and remove all PM2 processes
-pm2 delete all
-
-# Stop infrastructure
-docker compose down
-
-# Start fresh
-./scripts/start.sh
-```
-
-## Advanced Usage
-
-### Custom Environment
-
-```bash
-# Start with custom NODE_ENV
-NODE_ENV=development ./scripts/start.sh
-
-# Start with custom ports (modify script or use manual approach)
-cd packages/payment-service
-PORT=5001 pm2 start lib/index.js --name payment-service
-```
-
-### Production Deployment
-
-For production, consider:
-1. **SSL/TLS**: Use nginx/Caddy reverse proxy
-2. **Monitoring**: Set up Prometheus + Grafana
-3. **Logging**: Configure log rotation
-4. **Backups**: Automated database backups
-5. **Secrets**: Use environment-specific .env files
-
-### PM2 Startup on Boot
-
-Configure PM2 to start on system boot:
-```bash
-# Generate startup script
-pm2 startup
-
-# Run the command it outputs (requires sudo)
-
-# Save current process list
-pm2 save
-```
-
-## Testing
-
-After starting services, verify they're working:
-
-```bash
-# Health checks
-curl http://localhost:3001/health  # Should return: OK
-curl http://localhost:4001/health  # Should return: OK
-
-# Pricing endpoint
-curl "http://localhost:4001/v1/price/bytes/1000000"
-
-# x402 pricing
-curl "http://localhost:4001/v1/x402/price/1/YOUR_ADDRESS?bytes=1000000"
-```
-
-## Directory Structure
-
-```
-scripts/
-├── README.md          # This file
-├── start.sh           # Start all services
-├── stop.sh            # Stop all services
-├── restart.sh         # Restart all services
-├── migrate-all.sh     # Run database migrations
-├── setup.sh           # Initial setup
-└── dev.sh             # Development mode (deprecated)
-```
-
-## Migration from Old Approach
-
-If you were using the PM2 ecosystem.config.js approach, the new scripts provide:
-- ✅ Explicit PORT configuration (prevents conflicts)
-- ✅ Better error checking and validation
-- ✅ Clearer output and status information
-- ✅ Simpler to understand and debug
-- ✅ Works reliably with .env files in package directories
+**When to use:** First-time setup or complete reconfiguration
 
 ---
 
-For more information, see the main [README.md](../README.md)
+### `setup-basic.sh`
+**Simplified setup script** for quick installation without interactive prompts.
+
+**Features:**
+- Checks all prerequisites (Node.js 18+, Yarn, Docker)
+- Installs dependencies
+- Configures environment files from samples
+- Initializes infrastructure
+- Runs database migrations
+- Configures bundle planning cron job
+- Starts all services
+
+**Usage:**
+```bash
+./scripts/setup-basic.sh
+```
+
+**When to use:** Automated deployments or when you already have `.env` configured
+
+---
+
+### `setup-pm2-startup.sh`
+**Configures PM2 to automatically start on system boot** using systemd.
+
+**Requirements:** Must be run with `sudo`
+
+**Features:**
+- Creates systemd service (`pm2-vilenarios.service`)
+- Enables auto-start on system reboot
+- Preserves PM2 process list across reboots
+
+**Usage:**
+```bash
+sudo ./scripts/setup-pm2-startup.sh
+```
+
+**After running:**
+- Your PM2 services will start automatically after server reboot
+- Run `pm2 save` after starting services to persist the process list
+- Verify with: `sudo systemctl status pm2-vilenarios`
+
+**When to use:** Production deployments where services must survive reboots
+
+---
+
+## Service Management
+
+### `start.sh`
+**Starts all bundler services** (Docker infrastructure + PM2 processes).
+
+**What it does:**
+1. ✓ Checks and starts Docker containers (PostgreSQL, Redis, MinIO)
+2. ✓ Initializes MinIO buckets (if first run)
+3. ✓ Runs database migrations (if needed)
+4. ✓ Validates build status and builds if necessary
+5. ✓ Checks for wallet.json and .env files
+6. ✓ Starts PM2 services:
+   - `payment-service` (2 instances, cluster mode)
+   - `upload-api` (2 instances, cluster mode)
+   - `upload-workers` (1 instance, fork mode)
+   - `admin-dashboard` (1 instance, fork mode)
+7. ✓ Saves PM2 state
+8. ✓ Displays service URLs and status
+
+**Usage:**
+```bash
+./scripts/start.sh
+```
+
+**Service URLs after starting:**
+- Payment Service: http://localhost:4001
+- Upload Service: http://localhost:3001
+- Admin Dashboard: http://localhost:3002/admin/dashboard
+- Bull Board: http://localhost:3002/admin/queues
+- MinIO Console: http://localhost:9001
+
+---
+
+### `stop.sh`
+**Stops all services** (PM2 + optionally Docker infrastructure).
+
+**Options:**
+- Default: Stops PM2 services AND Docker infrastructure
+- `--services-only`: Stops only PM2 services, leaves Docker running
+
+**Usage:**
+```bash
+./scripts/stop.sh                  # Stop everything
+./scripts/stop.sh --services-only  # Stop PM2 only, keep Docker running
+```
+
+**When to use `--services-only`:**
+- Quick restart of application code without affecting infrastructure
+- Preserves database connections and data
+- Faster restart times
+
+---
+
+### `restart.sh`
+**Restarts services** with optional Docker infrastructure restart.
+
+**Options:**
+- Default: Restarts only PM2 services (fast restart)
+- `--with-docker`: Restarts Docker infrastructure too (full restart)
+
+**Usage:**
+```bash
+./scripts/restart.sh                # Restart PM2 services only
+./scripts/restart.sh --with-docker  # Restart Docker + PM2 (full system)
+```
+
+**What it does:**
+- Restarts PM2 processes with zero-downtime reload
+- Optionally restarts PostgreSQL, Redis, MinIO
+- Ensures MinIO buckets are initialized
+- Displays updated service status
+
+---
+
+### `verify.sh`
+**Comprehensive system health check** - validates all services and infrastructure.
+
+**Checks performed:**
+- ✓ Docker containers (PostgreSQL, Redis Cache, Redis Queues, MinIO)
+- ✓ Container health status (all must be healthy)
+- ✓ PM2 processes (payment-service, upload-api, upload-workers, admin-dashboard)
+- ✓ Process status (all must be online)
+- ✓ HTTP endpoints (health checks, API endpoints)
+- ✓ Port availability (3001, 3002, 4001)
+- ✓ Database connectivity
+- ✓ Redis connectivity (cache + queues)
+- ✓ MinIO connectivity and buckets
+- ✓ Configuration files (.env, wallet.json)
+- ✓ Disk space
+- ✓ Service logs for recent errors
+
+**Usage:**
+```bash
+./scripts/verify.sh
+```
+
+**Output:** Summary report with pass/fail counts and recommendations
+
+**When to use:**
+- After starting services
+- Troubleshooting issues
+- Pre-deployment validation
+- Regular health monitoring
+
+---
+
+## Bundle Monitoring & Management
+
+### `check-bundles.sh` ✨
+**Real-time bundle pipeline status dashboard.**
+
+**Shows:**
+- Bundle counts by stage (new → posted → seeded → permanent)
+- Bundles awaiting verification with timestamps
+- Recent permanent bundles with block heights
+- Data item statistics (new, planned, permanent)
+- Human-friendly time formatting (5m ago, 2h ago, 3d ago)
+
+**Usage:**
+```bash
+./scripts/check-bundles.sh
+```
+
+**Example Output:**
+```
+Bundle Pipeline Status:
+─────────────────────────────────────────────────────────
+  New (prepared bundles):        0
+  Posted (to Arweave):           0
+  Seeded (awaiting verify):      2
+  Permanent (finalized):        39
+─────────────────────────────────────────────────────────
+
+⚠ Seeded Bundles Awaiting Verification:
+  1. fgL0jDnMom4Kz4beOy5_dvQ5gvc3X9VVMfdSTmbc5gE
+     Plan: 467e7364... | Seeded: 5m ago
+  2. tbIdtHUbOHDRu4vwwLDEghJ4Gxmi1GScKQ88j4Mv0qQ
+     Plan: 8f9a0b1c... | Seeded: 12m ago
+
+Recent Permanent Bundles:
+  1. abc123...
+     Block: 1787843 | Finalized: 1h ago
+
+Data Item Status:
+─────────────────────────────────────────────────────────
+  New (uploaded):                0
+  Planned (in bundles):          5
+  Permanent (finalized):        46
+─────────────────────────────────────────────────────────
+```
+
+---
+
+### `trigger-verify.sh` ✨
+**Manually triggers bundle verification** to check seeded bundles and mark them as permanent.
+
+**When to use:**
+- Bundles stuck in "seeded" state showing `"info": "pending"`
+- After uploading large batches
+- Debugging verification issues
+- Want immediate verification instead of waiting for automatic 5min delay
+
+**What it does:**
+1. ✓ Checks if upload-workers are running
+2. ✓ Counts seeded bundles awaiting verification
+3. ✓ Enqueues verify job to BullMQ
+4. ✓ Worker checks each bundle's Arweave confirmations
+5. ✓ Moves bundles with ≥18 confirmations to permanent status
+6. ✓ Updates data items from `planned_data_item` → `permanent_data_items`
+7. ✓ Status endpoint changes from `"info": "pending"` → `"info": "permanent"`
+
+**Usage:**
+```bash
+./scripts/trigger-verify.sh
+```
+
+**Output:**
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Trigger Bundle Verification
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✓ Upload workers are running
+
+Checking for seeded bundles...
+✓ Found 2 seeded bundle(s) to verify
+
+Enqueueing verify job...
+✓ Verify job enqueued successfully
+  Plan ID: manual-trigger-1730735993
+
+✓ Verify job triggered successfully!
+
+Monitor the job with:
+  pm2 logs upload-workers --lines 100
+```
+
+---
+
+## Database Management
+
+### `migrate-all.sh`
+**Runs database migrations for both services.**
+
+**What it does:**
+1. ✓ Checks if PostgreSQL is running (starts if needed)
+2. ✓ Runs payment-service migrations
+3. ✓ Runs upload-service migrations
+4. ✓ Reports success/failure for each
+
+**Usage:**
+```bash
+./scripts/migrate-all.sh
+```
+
+**When to use:**
+- After pulling new code with schema changes
+- Initial setup
+- After manually creating migrations
+- Troubleshooting database schema issues
+
+**Database names:**
+- Payment service: `payment_service`
+- Upload service: `upload_service`
+
+---
+
+## Maintenance & Cleanup
+
+### `cleanup-bundler-files.sh`
+**Cleans temporary and data files** based on retention policy.
+
+**Configurable via `.env`:**
+```bash
+TEMP_DIR=/path/to/temp                    # Default: upload-service/temp
+UPLOAD_SERVICE_DATA_DIR=/path/to/data     # Default: upload-service/upload-service-data
+CLEANUP_RETENTION_DAYS=90                 # Files older than this are deleted
+CLEANUP_DRY_RUN=false                     # Set to true to preview without deleting
+CLEANUP_LOG_DIR=/path/to/logs             # Default: ./logs
+```
+
+**Features:**
+- Deletes files older than retention period (default 90 days)
+- Removes empty directories after cleanup
+- Logs all operations to `logs/cleanup-bundler-files.log`
+- Shows disk space before/after
+- Supports dry-run mode for testing
+
+**Usage:**
+```bash
+./scripts/cleanup-bundler-files.sh  # Run cleanup
+
+# Dry run (preview only)
+CLEANUP_DRY_RUN=true ./scripts/cleanup-bundler-files.sh
+```
+
+**When to use:**
+- Set up as cron job for automatic cleanup
+- Manual cleanup before running out of disk space
+- Testing cleanup with dry-run before production
+
+**Recommended cron job:**
+```bash
+# Run cleanup weekly on Sunday at 2 AM
+0 2 * * 0 /path/to/ar-io-bundler/scripts/cleanup-bundler-files.sh
+```
+
+---
+
+## Development
+
+### `dev.sh`
+**Starts all services in development mode** with hot reload.
+
+**Features:**
+- Checks and starts infrastructure if not running
+- Validates `.env` and `wallet.json` existence
+- Builds packages if needed
+- Starts services using PM2 development configuration
+- Shows service URLs and helpful commands
+
+**Usage:**
+```bash
+./scripts/dev.sh
+```
+
+**Development Service URLs:**
+- Payment Service: http://localhost:4000
+- Upload Service: http://localhost:3001
+- Bull Board: http://localhost:3002/admin/queues
+- MinIO Console: http://localhost:9001
+
+**Useful development commands:**
+```bash
+pm2 logs         # View all logs
+pm2 monit        # Monitor processes
+pm2 restart all  # Restart all services
+pm2 stop all     # Stop all services
+```
+
+---
+
+## Typical Workflows
+
+### First-Time Setup
+```bash
+# Interactive setup with guidance
+./scripts/setup.sh
+
+# OR automated setup (if .env already configured)
+./scripts/setup-basic.sh
+
+# Configure auto-start on boot (production)
+sudo ./scripts/setup-pm2-startup.sh
+pm2 save
+```
+
+### Daily Operations
+```bash
+# Start services
+./scripts/start.sh
+
+# Check system health
+./scripts/verify.sh
+
+# Monitor bundle pipeline
+./scripts/check-bundles.sh
+
+# View logs
+pm2 logs
+pm2 logs upload-workers --lines 100
+```
+
+### Debugging "pending" Status Issue
+```bash
+# 1. Check bundle status
+./scripts/check-bundles.sh
+
+# 2. If bundles are stuck in "seeded" state, trigger verification
+./scripts/trigger-verify.sh
+
+# 3. Monitor worker logs
+pm2 logs upload-workers
+
+# 4. Check specific data item status
+curl http://localhost:3001/v1/tx/status/YOUR_DATA_ITEM_ID
+```
+
+### Deployment / Updates
+```bash
+# 1. Pull latest code
+git pull
+
+# 2. Install dependencies
+yarn install
+
+# 3. Run migrations
+./scripts/migrate-all.sh
+
+# 4. Rebuild services
+yarn build
+
+# 5. Restart services
+./scripts/restart.sh
+
+# 6. Verify health
+./scripts/verify.sh
+```
+
+### Troubleshooting Services
+```bash
+# Check what's running
+pm2 list
+docker compose ps
+
+# Check service health
+./scripts/verify.sh
+
+# Check bundle pipeline
+./scripts/check-bundles.sh
+
+# View recent logs
+pm2 logs --lines 50
+
+# View errors only
+pm2 logs --err --lines 100
+
+# Restart specific service
+pm2 restart upload-workers
+
+# Full system restart
+./scripts/restart.sh --with-docker
+```
+
+### Maintenance
+```bash
+# Weekly cleanup of temp files
+./scripts/cleanup-bundler-files.sh
+
+# Preview cleanup (dry run)
+CLEANUP_DRY_RUN=true ./scripts/cleanup-bundler-files.sh
+
+# Check disk space
+df -h
+du -sh /path/to/upload-service/temp
+```
+
+---
+
+## System Architecture
+
+### Bundle Verification Process
+
+The bundle lifecycle and verification flow:
+
+1. **Upload** → Data item stored in `new_data_item` table
+2. **Plan** → Grouped into bundle in `planned_data_item` table
+3. **Prepare** → Bundle signed and stored in `new_bundle` table
+4. **Post** → Submitted to Arweave, moved to `posted_bundle` table
+5. **Seed** → Chunks uploaded to Arweave, moved to `seeded_bundle` table, verify job queued with 5min delay
+6. **Verify** → Check confirmations (≥18), move to `permanent_bundle` and `permanent_data_items` tables
+
+**Automatic verification:** Happens 5 minutes after seeding (via cron job every 5 minutes)
+**Manual verification:** Run `./scripts/trigger-verify.sh` anytime
+**Confirmation threshold:** 18 blocks on Arweave (~18 minutes at 1 min/block)
+
+### Status Endpoint Behavior
+
+The `/v1/tx/status/:id` endpoint returns different statuses:
+
+- `"info": "new"` - Just uploaded, not yet bundled
+- `"info": "pending"` - In a bundle, awaiting verification (seeded on Arweave)
+- `"info": "permanent"` - Bundle verified with ≥18 confirmations
+- `"info": "failed"` - Bundle posting failed
+
+**Important:** `"info": "pending"` does **NOT** mean the bundle failed. It simply means the bundle is seeded on Arweave but hasn't reached the confirmation threshold yet. Once verified, it changes to `"permanent"`.
+
+### PM2 Process Architecture
+
+| Process | Instances | Mode | Purpose |
+|---------|-----------|------|---------|
+| payment-service | 2 | cluster | Payment API with load balancing |
+| upload-api | 2 | cluster | Upload API with load balancing |
+| upload-workers | 1 | fork | Background job processing (11 BullMQ queues) |
+| admin-dashboard | 1 | fork | Admin UI + Bull Board queue monitoring |
+
+**Why fork mode for workers?**
+Fork mode ensures only one instance processes jobs, preventing duplicate processing of the same bundle/data item.
+
+### Port Allocation
+
+| Service | Port | Description |
+|---------|------|-------------|
+| Upload API | 3001 | Data upload REST API |
+| Admin Dashboard | 3002 | Admin UI + Bull Board |
+| Payment API | 4001 | Payment processing REST API |
+| AR.IO Gateway (optional) | 3000, 4000, 5050 | External gateway integration |
+| PostgreSQL | 5432 | Database server (2 databases) |
+| Redis Cache | 6379 | Application caching |
+| Redis Queues | 6381 | BullMQ job queues |
+| MinIO API | 9000 | S3-compatible object storage |
+| MinIO Console | 9001 | Web UI for MinIO |
+
+---
+
+## Script Quick Reference
+
+| Script | Purpose | Common Use Case |
+|--------|---------|----------------|
+| `setup.sh` | Interactive initial setup | First-time installation |
+| `setup-basic.sh` | Automated setup | CI/CD deployments |
+| `setup-pm2-startup.sh` | Configure auto-start | Production servers |
+| `start.sh` | Start all services | Daily operations |
+| `stop.sh` | Stop all services | Shutdown, maintenance |
+| `restart.sh` | Restart services | After code updates |
+| `verify.sh` | Health check | Troubleshooting |
+| `check-bundles.sh` | Bundle pipeline status | Monitor uploads |
+| `trigger-verify.sh` | Force bundle verification | Debug pending status |
+| `migrate-all.sh` | Run DB migrations | After schema changes |
+| `cleanup-bundler-files.sh` | Clean temp files | Disk maintenance |
+| `dev.sh` | Development mode | Local development |
+
+---
+
+## Notes
+
+- All scripts should be run from the repository root directory
+- Scripts use colored output for better readability (disable with `NO_COLOR=1`)
+- Worker logs are available via `pm2 logs upload-workers`
+- Bundle status can be monitored at http://localhost:3002/admin/queues
+- Most scripts are idempotent (safe to run multiple times)
+- Check script exit codes: `0` = success, non-zero = failure
+
+## Troubleshooting
+
+### "Permission denied" errors
+```bash
+# Make scripts executable
+chmod +x scripts/*.sh
+```
+
+### "Docker not running" errors
+```bash
+# Start Docker
+sudo systemctl start docker
+
+# Verify
+docker ps
+```
+
+### "PM2 not found" errors
+```bash
+# Install PM2 globally
+npm install -g pm2
+
+# Verify
+pm2 --version
+```
+
+### Services won't start
+```bash
+# Check what's using the ports
+sudo ss -tlnp | grep -E ":3001|:4001|:3002"
+
+# Stop conflicting services
+./scripts/stop.sh
+```
+
+---
+
+**Need Help?** Check the main repository README.md or service-specific CLAUDE.md files in `packages/payment-service/` and `packages/upload-service/`.
