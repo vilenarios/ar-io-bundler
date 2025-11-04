@@ -87,6 +87,12 @@ export const publicAccessGatewayUrl = new URL(
   process.env.PUBLIC_ACCESS_GATEWAY || "https://arweave.net:443"
 );
 
+// Separate upload node for TX headers and chunk uploads (defaults to arweave.net for reliability)
+// AR.IO Gateways are optimized for reads but don't support /chunk endpoint
+export const arweaveUploadNode = new URL(
+  process.env.ARWEAVE_UPLOAD_NODE || "https://arweave.net:443"
+);
+
 export const dataCaches = process.env.DATA_CACHES?.split(",") ?? [
   publicAccessGatewayUrl.host,
 ];

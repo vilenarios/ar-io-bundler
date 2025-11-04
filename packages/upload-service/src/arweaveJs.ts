@@ -26,7 +26,7 @@ import { pipeline } from "stream/promises";
 import winston from "winston";
 
 import { ArweaveGateway } from "./arch/arweaveGateway";
-import { gatewayUrl } from "./constants";
+import { arweaveUploadNode, gatewayUrl } from "./constants";
 import logger from "./logger";
 import { JWKInterface } from "./types/jwkTypes";
 import { TxAttributes } from "./types/types";
@@ -34,6 +34,7 @@ import { filterKeysFromObject } from "./utils/common";
 
 export class ArweaveInterface {
   private log: winston.Logger;
+  private readonly arweaveJsUpload: Arweave; // Separate Arweave instance for uploads
   constructor(
     protected readonly gateway: ArweaveGateway = new ArweaveGateway({
       endpoint: gatewayUrl,
@@ -50,6 +51,23 @@ export class ArweaveInterface {
     })
   ) {
     this.log = logger.child({ class: this.constructor.name });
+
+    // Initialize separate Arweave instance for TX headers and chunk uploads
+    // This allows using arweave.net for uploads while keeping local gateway for reads
+    this.arweaveJsUpload = Arweave.init({
+      host: arweaveUploadNode.hostname,
+      port: arweaveUploadNode.port,
+      protocol: arweaveUploadNode.protocol.replace(":", ""),
+      timeout: process.env.ARWEAVE_NETWORK_REQUEST_TIMEOUT_MS
+        ? +process.env.ARWEAVE_NETWORK_REQUEST_TIMEOUT_MS
+        : 40_000,
+      logging: false,
+    });
+
+    this.log.info("Initialized ArweaveInterface with separate upload node", {
+      gatewayUrl: `${gatewayUrl.protocol}//${gatewayUrl.host}`,
+      uploadNode: `${arweaveUploadNode.protocol}//${arweaveUploadNode.host}`,
+    });
   }
 
   public signTx(tx: Transaction, jwk: JWKInterface): Promise<void> {
@@ -61,7 +79,8 @@ export class ArweaveInterface {
   }
 
   public async postTx(tx: Transaction): Promise<void> {
-    await this.arweaveJs.transactions.post(tx);
+    // Post TX headers to upload node (arweave.net)
+    await this.arweaveJsUpload.transactions.post(tx);
   }
 
   public async uploadChunksFromPayloadStream(
@@ -87,10 +106,12 @@ export class ArweaveInterface {
       bundleId,
       durationsMs,
       chunkUploadStartMs,
+      uploadNode: `${arweaveUploadNode.protocol}//${arweaveUploadNode.host}`,
     });
+    // Use arweaveJsUpload for chunk uploads (configured to use ARWEAVE_UPLOAD_NODE)
     await pipeline(
       await getPayloadStream(),
-      uploadTransactionAsync(bundleTx, this.arweaveJs, false)
+      uploadTransactionAsync(bundleTx, this.arweaveJsUpload, false)
     );
     durationsMs.chunkUpload = Date.now() - chunkUploadStartMs;
 
