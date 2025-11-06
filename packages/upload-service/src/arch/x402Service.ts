@@ -259,7 +259,7 @@ export class X402Service {
           },
           {
             headers: { "Content-Type": "application/json" },
-            timeout: 30000, // 30 second timeout
+            timeout: 180000, // 3 minute timeout
           }
         );
 
