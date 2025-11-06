@@ -461,9 +461,10 @@ async function send402PaymentRequired(
   });
 
   // Build absolute URL for the resource (required by x402 facilitator)
-  const protocol = ctx.request.protocol || "https";
-  const host = ctx.request.host || ctx.request.hostname || "localhost:3001";
-  const resourceUrl = `${protocol}://${host}/v1/tx`;
+  // IMPORTANT: Must match UPLOAD_SERVICE_PUBLIC_URL to ensure consistency with payment settlement
+  const uploadServicePublicUrl =
+    process.env.UPLOAD_SERVICE_PUBLIC_URL || "http://localhost:3001";
+  const resourceUrl = `${uploadServicePublicUrl}/v1/tx`;
 
   // Get network config for correct USDC address
   const network = process.env.X402_NETWORK || "base-sepolia";

@@ -219,6 +219,7 @@ export class X402Service {
     requirements: X402PaymentRequirements
   ): Promise<X402SettlementResult> {
     try {
+      // Parse payload to get network config, but send original header to facilitator
       const paymentPayload: X402PaymentPayload = JSON.parse(
         Buffer.from(paymentHeader, "base64").toString("utf-8")
       );
@@ -250,52 +251,81 @@ export class X402Service {
           }
         }
 
-        const response = await axios.post(
-          `${networkConfig.facilitatorUrl}/settle`,
-          {
+        try {
+          const requestPayload = {
             x402Version: 1,
-            paymentPayload, // Send decoded and corrected payload
+            paymentPayload, // Send decoded object (facilitator expects struct, not string)
             paymentRequirements: requirements,
-          },
-          {
-            headers: { "Content-Type": "application/json" },
-            timeout: 180000, // 3 minute timeout
-          }
-        );
+          };
 
-        if (response.status !== 200) {
-          const error = response.data?.error || response.statusText;
-          logger.error("Facilitator settlement failed", {
-            status: response.status,
-            error,
+          // Log the full request for debugging
+          logger.info("Sending settlement request to facilitator", {
+            url: `${networkConfig.facilitatorUrl}/settle`,
+            paymentHeaderLength: paymentHeader.length,
+            paymentRequirements: requirements,
           });
-          return { success: false, error };
-        }
 
-        const result = response.data;
+          const response = await axios.post(
+            `${networkConfig.facilitatorUrl}/settle`,
+            requestPayload,
+            {
+              headers: { "Content-Type": "application/json" },
+              timeout: 180000, // 3 minute timeout
+              validateStatus: () => true, // Don't throw on non-200 status
+            }
+          );
 
-        // Facilitator returns "transaction" field, not "transactionHash"
-        const txHash = result.transaction || result.transactionHash;
+          if (response.status !== 200) {
+            const errorMsg =
+              response.data?.error ||
+              response.data?.message ||
+              response.statusText;
+            logger.error("Facilitator settlement failed", {
+              status: response.status,
+              error: errorMsg,
+              responseData: response.data, // Log full response for debugging
+            });
+            return { success: false, error: errorMsg };
+          }
 
-        logger.info("X402 payment settled via facilitator", {
-          txHash,
-          network: result.network,
-        });
+          const result = response.data;
 
-        // Check if transaction hash is present
-        if (!txHash) {
-          logger.warn("Facilitator did not return transaction hash", { result });
+          // Facilitator returns "transaction" field, not "transactionHash"
+          const txHash = result.transaction || result.transactionHash;
+
+          logger.info("X402 payment settled via facilitator", {
+            txHash,
+            network: result.network,
+          });
+
+          // Check if transaction hash is present
+          if (!txHash) {
+            logger.warn("Facilitator did not return transaction hash", {
+              result,
+            });
+            return {
+              success: false,
+              error:
+                "Facilitator settlement succeeded but did not return transaction hash",
+            };
+          }
+
+          return {
+            success: true,
+            transactionHash: txHash,
+            network: result.network,
+          };
+        } catch (axiosError: any) {
+          logger.error("Facilitator request failed", {
+            error: axiosError.message,
+            response: axiosError.response?.data,
+            status: axiosError.response?.status,
+          });
           return {
             success: false,
-            error: "Facilitator settlement succeeded but did not return transaction hash",
+            error: axiosError.response?.data?.message || axiosError.message,
           };
         }
-
-        return {
-          success: true,
-          transactionHash: txHash,
-          network: result.network,
-        };
       }
 
       // Otherwise, settle locally (requires wallet setup)
