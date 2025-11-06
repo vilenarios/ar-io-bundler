@@ -240,23 +240,39 @@ export class X402Service {
           facilitator: networkConfig.facilitatorUrl,
         });
 
-        // Ensure validAfter and validBefore are strings (facilitator expects strings)
-        if (paymentPayload.payload?.authorization) {
-          const auth = paymentPayload.payload.authorization as any;
-          if (typeof auth.validAfter === "number") {
-            auth.validAfter = auth.validAfter.toString();
-          }
-          if (typeof auth.validBefore === "number") {
-            auth.validBefore = auth.validBefore.toString();
-          }
-        }
-
         try {
-          const requestPayload = {
-            x402Version: 1,
-            paymentPayload, // Send decoded object (facilitator expects struct, not string)
-            paymentRequirements: requirements,
-          };
+          // Different facilitators use different formats:
+          // - GitHub x402 spec: "paymentHeader" as base64 string
+          // - facilitator.x402.rs: "paymentPayload" as decoded object
+          // - Coinbase facilitator: "paymentHeader" as base64 string (TBD)
+          const isCommunityFacilitator = networkConfig.facilitatorUrl.includes("x402.rs");
+
+          let requestPayload: any;
+          if (isCommunityFacilitator) {
+            // Community facilitator expects decoded object with string timestamps
+            if (paymentPayload.payload?.authorization) {
+              const auth = paymentPayload.payload.authorization as any;
+              if (typeof auth.validAfter === "number") {
+                auth.validAfter = auth.validAfter.toString();
+              }
+              if (typeof auth.validBefore === "number") {
+                auth.validBefore = auth.validBefore.toString();
+              }
+            }
+
+            requestPayload = {
+              x402Version: 1,
+              paymentPayload, // Send decoded object
+              paymentRequirements: requirements,
+            };
+          } else {
+            // Standard x402 spec: base64 string
+            requestPayload = {
+              x402Version: 1,
+              paymentHeader, // Send base64 string as-is
+              paymentRequirements: requirements,
+            };
+          }
 
           // Log the full request for debugging
           logger.info("Sending settlement request to facilitator", {
@@ -418,29 +434,43 @@ export class X402Service {
     facilitatorUrl: string
   ): Promise<X402VerificationResult> {
     try {
-      // Decode the payment header to get the payload
-      const paymentPayload = JSON.parse(
-        Buffer.from(paymentHeader, "base64").toString("utf8")
-      );
+      // Different facilitators use different formats
+      const isCommunityFacilitator = facilitatorUrl.includes("x402.rs");
 
-      // Ensure validAfter and validBefore are strings (facilitator expects strings)
-      if (paymentPayload.payload?.authorization) {
-        const auth = paymentPayload.payload.authorization as any;
-        if (typeof auth.validAfter === "number") {
-          auth.validAfter = auth.validAfter.toString();
+      let requestPayload: any;
+      if (isCommunityFacilitator) {
+        // Decode and convert timestamps for community facilitator
+        const paymentPayload = JSON.parse(
+          Buffer.from(paymentHeader, "base64").toString("utf8")
+        );
+
+        if (paymentPayload.payload?.authorization) {
+          const auth = paymentPayload.payload.authorization as any;
+          if (typeof auth.validAfter === "number") {
+            auth.validAfter = auth.validAfter.toString();
+          }
+          if (typeof auth.validBefore === "number") {
+            auth.validBefore = auth.validBefore.toString();
+          }
         }
-        if (typeof auth.validBefore === "number") {
-          auth.validBefore = auth.validBefore.toString();
-        }
+
+        requestPayload = {
+          x402Version: 1,
+          paymentPayload, // Send decoded object
+          paymentRequirements: requirements,
+        };
+      } else {
+        // Standard x402 spec: base64 string
+        requestPayload = {
+          x402Version: 1,
+          paymentHeader, // Send base64 string as-is
+          paymentRequirements: requirements,
+        };
       }
 
       const response = await axios.post(
         `${facilitatorUrl}/verify`,
-        {
-          x402Version: 1,
-          paymentPayload,
-          paymentRequirements: requirements,
-        },
+        requestPayload,
         {
           headers: { "Content-Type": "application/json" },
           timeout: 10000, // 10 second timeout
