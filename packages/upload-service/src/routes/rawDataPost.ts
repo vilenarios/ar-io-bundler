@@ -109,11 +109,24 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
   }
 
   // Calculate pricing for the upload
-  // Estimate final data item size (raw data + ANS-104 overhead)
-  const estimatedDataItemSize = parsedRequest.data.length + 1500; // ~1.5KB for headers/tags
+  // Import estimation function
+  const { estimateDataItemSize } = await import("../utils/createDataItem");
+
+  // Count tags: user tags + 7 system tags for x402
+  // System tags: Bundler, Upload-Type, Payer-Address, X402-TX-Hash, X402-Payment-ID, X402-Network, Upload-Timestamp
+  const userTagCount = parsedRequest.tags?.length || 0;
+  const systemTagCount = 7; // x402 system tags
+  const contentTypeTagCount = parsedRequest.contentType ? 1 : 0;
+  const totalTagCount = userTagCount + systemTagCount + contentTypeTagCount;
+
+  // Estimate final data item size (raw data + ANS-104 overhead with accurate tag count)
+  const estimatedDataItemSize = estimateDataItemSize(parsedRequest.data.length, totalTagCount);
 
   logger.info("Calculating pricing for x402 upload", {
     rawDataSize: parsedRequest.data.length,
+    userTagCount,
+    systemTagCount,
+    totalTagCount,
     estimatedDataItemSize,
   });
 
@@ -122,10 +135,13 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
     estimatedDataItemSize
   );
 
-  // Convert Winston to USDC
+  // Apply 5% buffer here (oracle will apply additional 10% for total ~15.5% to match payment-service)
+  const winstonWithBuffer = Math.ceil(Number(winstonCost) * 1.05);
+
+  // Convert Winston to USDC (oracle applies additional 10% buffer internally)
   const { X402PricingOracle } = await import("../utils/x402Pricing");
   const x402Oracle = new X402PricingOracle();
-  const usdcAmountRequired = await x402Oracle.getUSDCForWinston(W(winstonCost.toString()));
+  const usdcAmountRequired = await x402Oracle.getUSDCForWinston(W(winstonWithBuffer.toString()));
 
   // Build payment requirements for verification
   const uploadServicePublicUrl = process.env.UPLOAD_SERVICE_PUBLIC_URL || "http://localhost:3001";
@@ -188,7 +204,7 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
 
     logger.info("X402 payment settled successfully", {
       txHash: settlement.transactionHash,
-      network: settlement.network,
+      network: paymentPayload.network,
     });
   } catch (error) {
     logger.error("X402 payment failed", { error });
@@ -202,6 +218,13 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
   const { randomUUID } = await import("crypto");
   const paymentId = randomUUID();
 
+  // Validate and normalize user tags
+  const validTags = (parsedRequest.tags || []).filter((tag: any) => {
+    if (!tag || typeof tag !== "object") return false;
+    if (typeof tag.name !== "string" || typeof tag.value !== "string") return false;
+    return true;
+  });
+
   // NOW create the data item with TX hash in tags
   let dataItem: DataItem;
   let rawDataItemWallet;
@@ -210,13 +233,13 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
     dataItem = await createDataItemFromRaw(
       {
         data: parsedRequest.data,
-        tags: parsedRequest.tags,
+        tags: validTags,
         contentType: parsedRequest.contentType,
         payerAddress,
         x402Payment: {
           txHash: settlement.transactionHash!,
           paymentId,
-          network: settlement.network!,
+          network: paymentPayload.network,
         },
       },
       rawDataItemWallet
@@ -228,7 +251,11 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
       paymentId,
     });
   } catch (error) {
-    logger.error("Failed to create data item", { error });
+    logger.error("Failed to create data item", {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      errorType: error?.constructor?.name,
+    });
     return errorResponse(ctx, {
       errorMessage: "Failed to create data item from raw data",
       status: 500,
@@ -269,7 +296,7 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
   await ctx.state.database.insertX402Payment({
     paymentId,
     txHash: settlement.transactionHash!,
-    network: settlement.network!,
+    network: paymentPayload.network,
     payerAddress,
     usdcAmount: paymentPayload.payload.authorization.value,
     wincAmount: wincPaid,
@@ -400,7 +427,7 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
   const x402PaymentResponse = {
     paymentId,
     transactionHash: settlement.transactionHash!,
-    network: settlement.network!,
+    network: paymentPayload.network,
     mode: "payg", // x402 is always PAYG (no credit assignment)
   };
 
@@ -421,7 +448,7 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
     dataItemId: dataItem.id,
     x402PaymentId: paymentId,
     x402TxHash: settlement.transactionHash,
-    x402Network: settlement.network,
+    x402Network: paymentPayload.network,
     x402Mode: "payg",
     payerAddress,
     message: "Payment metadata stored in response. TX hash and payment ID available via x402Payment object",

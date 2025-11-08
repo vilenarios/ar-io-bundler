@@ -16,8 +16,54 @@
  */
 import axios from "axios";
 import { ethers } from "ethers";
+// @ts-ignore - @coinbase/x402 doesn't export types
+import { createFacilitatorConfig } from "@coinbase/x402";
+// @ts-ignore - @coinbase/x402 doesn't export types
+import { useFacilitator } from "x402/verify";
 
 import logger from "../logger";
+
+// Convert payment payload to Coinbase-compatible format
+function toCoinbaseFormat(data: any): any {
+  if (typeof data !== "object" || data === null) {
+    return data;
+  }
+
+  function convert(value: any): any {
+    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+      const result: any = {};
+      for (const [key, val] of Object.entries(value)) {
+        // Convert timestamp fields to strings for Coinbase
+        if ((key === "validAfter" || key === "validBefore") && typeof val === "number") {
+          result[key] = val.toString();
+        } else {
+          result[key] = convert(val);
+        }
+      }
+      return result;
+    }
+    if (Array.isArray(value)) {
+      return value.map(convert);
+    }
+    if (typeof value === "bigint") {
+      return value.toString();
+    }
+    return value;
+  }
+
+  return convert(data);
+}
+
+// Create x402 SDK facilitator instance with explicit CDP credentials
+const cdpApiKeyId = process.env.CDP_API_KEY_ID;
+const cdpApiKeySecret = process.env.CDP_API_KEY_SECRET;
+
+if (!cdpApiKeyId || !cdpApiKeySecret) {
+  logger.warn("CDP credentials not configured - x402 Coinbase facilitator will not work");
+}
+
+const coinbaseFacilitatorConfig = createFacilitatorConfig(cdpApiKeyId, cdpApiKeySecret);
+const coinbaseFacilitator = useFacilitator(coinbaseFacilitatorConfig);
 
 // x402 Network Configuration
 export interface X402NetworkConfig {
@@ -241,53 +287,77 @@ export class X402Service {
         });
 
         try {
-          // Different facilitators use different formats:
-          // - GitHub x402 spec: "paymentHeader" as base64 string
-          // - facilitator.x402.rs: "paymentPayload" as decoded object
-          // - Coinbase facilitator: "paymentHeader" as base64 string (TBD)
+          const isCoinbaseFacilitator = networkConfig.facilitatorUrl.includes("api.cdp.coinbase.com");
           const isCommunityFacilitator = networkConfig.facilitatorUrl.includes("x402.rs");
 
-          let requestPayload: any;
-          if (isCommunityFacilitator) {
-            // Community facilitator expects decoded object with string timestamps
-            if (paymentPayload.payload?.authorization) {
-              const auth = paymentPayload.payload.authorization as any;
-              if (typeof auth.validAfter === "number") {
-                auth.validAfter = auth.validAfter.toString();
-              }
-              if (typeof auth.validBefore === "number") {
-                auth.validBefore = auth.validBefore.toString();
-              }
-            }
+          logger.info("Settling x402 payment via facilitator", {
+            facilitator: networkConfig.facilitatorUrl,
+            network: paymentPayload.network,
+            isCoinbaseFacilitator,
+            isCommunityFacilitator,
+          });
 
-            requestPayload = {
-              x402Version: 1,
-              paymentPayload, // Send decoded object
-              paymentRequirements: requirements,
-            };
-          } else {
-            // Standard x402 spec: base64 string
-            requestPayload = {
-              x402Version: 1,
-              paymentHeader, // Send base64 string as-is
-              paymentRequirements: requirements,
-            };
+          // Use SDK for Coinbase facilitator
+          if (isCoinbaseFacilitator) {
+            try {
+              logger.info("Settling x402 payment with Coinbase facilitator SDK", {
+                url: networkConfig.facilitatorUrl,
+                network: paymentPayload.network,
+              });
+
+              // Convert timestamps to strings for Coinbase
+              const coinbasePayload = toCoinbaseFormat(paymentPayload);
+              const result = await coinbaseFacilitator.settle(coinbasePayload, requirements);
+
+              if (result.transaction) {
+                logger.info("X402 payment settled via Coinbase SDK", {
+                  transactionHash: result.transaction,
+                  network: paymentPayload.network,
+                });
+                return { success: true, transactionHash: result.transaction };
+              } else {
+                logger.error("Coinbase SDK settlement failed - no transaction hash");
+                return { success: false, error: "settlement_failed" };
+              }
+            } catch (error: any) {
+              logger.error("Coinbase SDK settlement failed", {
+                error: error.message,
+                stack: error.stack,
+              });
+              return { success: false, error: error.message || "settlement_failed" };
+            }
           }
 
-          // Log the full request for debugging
-          logger.info("Sending settlement request to facilitator", {
-            url: `${networkConfig.facilitatorUrl}/settle`,
-            paymentHeaderLength: paymentHeader.length,
-            paymentRequirements: requirements,
-          });
+          // Community facilitator: manual request with string timestamps
+          if (isCommunityFacilitator && paymentPayload.payload?.authorization) {
+            const auth = paymentPayload.payload.authorization as any;
+            if (typeof auth.validAfter === "number") {
+              auth.validAfter = auth.validAfter.toString();
+            }
+            if (typeof auth.validBefore === "number") {
+              auth.validBefore = auth.validBefore.toString();
+            }
+          }
+
+          const requestPayload = isCommunityFacilitator
+            ? {
+                x402Version: 1,
+                paymentPayload,
+                paymentRequirements: requirements,
+              }
+            : {
+                x402Version: 1,
+                paymentHeader,
+                paymentRequirements: requirements,
+              };
 
           const response = await axios.post(
             `${networkConfig.facilitatorUrl}/settle`,
             requestPayload,
             {
               headers: { "Content-Type": "application/json" },
-              timeout: 180000, // 3 minute timeout
-              validateStatus: () => true, // Don't throw on non-200 status
+              timeout: 180000,
+              validateStatus: () => true,
             }
           );
 
@@ -434,46 +504,119 @@ export class X402Service {
     facilitatorUrl: string
   ): Promise<X402VerificationResult> {
     try {
-      // Different facilitators use different formats
+      const isCoinbaseFacilitator = facilitatorUrl.includes("api.cdp.coinbase.com");
       const isCommunityFacilitator = facilitatorUrl.includes("x402.rs");
 
-      let requestPayload: any;
-      if (isCommunityFacilitator) {
-        // Decode and convert timestamps for community facilitator
-        const paymentPayload = JSON.parse(
-          Buffer.from(paymentHeader, "base64").toString("utf8")
-        );
+      // Decode payment header
+      const paymentPayload = JSON.parse(
+        Buffer.from(paymentHeader, "base64").toString("utf8")
+      );
 
-        if (paymentPayload.payload?.authorization) {
-          const auth = paymentPayload.payload.authorization as any;
-          if (typeof auth.validAfter === "number") {
-            auth.validAfter = auth.validAfter.toString();
-          }
-          if (typeof auth.validBefore === "number") {
-            auth.validBefore = auth.validBefore.toString();
+      // Use SDK for Coinbase facilitator
+      if (isCoinbaseFacilitator) {
+        try {
+          logger.info("Verifying x402 payment with Coinbase facilitator SDK", {
+            url: facilitatorUrl,
+            network: paymentPayload.network,
+          });
+
+          // Convert timestamps to strings for Coinbase
+          const coinbasePayload = toCoinbaseFormat(paymentPayload);
+          const result = await coinbaseFacilitator.verify(coinbasePayload, requirements);
+
+          logger.info("Coinbase SDK verification result", {
+            isValid: result.isValid,
+            invalidReason: result.invalidReason,
+          });
+
+          return {
+            isValid: result.isValid,
+            invalidReason: result.invalidReason,
+          };
+        } catch (error: any) {
+          logger.error("Coinbase SDK verification failed - making manual request for details", {
+            error: error.message,
+            stack: error.stack,
+          });
+
+          // Make manual request to get detailed error
+          try {
+            const authHeaders = await coinbaseFacilitatorConfig.createAuthHeaders();
+
+            const coinbasePayload = toCoinbaseFormat(paymentPayload);
+            const requestBody = {
+              x402Version: coinbasePayload.x402Version,
+              paymentPayload: coinbasePayload,
+              paymentRequirements: requirements,
+            };
+
+            const response = await axios.post(
+              `${facilitatorUrl}/verify`,
+              requestBody,
+              {
+                headers: {
+                  "Content-Type": "application/json",
+                  ...authHeaders.verify,
+                },
+                timeout: 10000,
+                validateStatus: () => true,
+              }
+            );
+
+            logger.error("Coinbase detailed error response", {
+              status: response.status,
+              statusText: response.statusText,
+              data: JSON.stringify(response.data),
+              requestBody: JSON.stringify({
+                x402Version: paymentPayload.x402Version,
+                paymentPayload: paymentPayload,
+                paymentRequirements: requirements,
+              }),
+            });
+
+            return {
+              isValid: false,
+              invalidReason: response.data?.errorMessage || error.message || "verification_failed",
+            };
+          } catch (detailError: any) {
+            logger.error("Failed to get detailed error", { error: detailError.message });
+            return {
+              isValid: false,
+              invalidReason: error.message || "verification_failed",
+            };
           }
         }
-
-        requestPayload = {
-          x402Version: 1,
-          paymentPayload, // Send decoded object
-          paymentRequirements: requirements,
-        };
-      } else {
-        // Standard x402 spec: base64 string
-        requestPayload = {
-          x402Version: 1,
-          paymentHeader, // Send base64 string as-is
-          paymentRequirements: requirements,
-        };
       }
+
+      // Community facilitator: manual request with string timestamps
+      if (isCommunityFacilitator && paymentPayload.payload?.authorization) {
+        const auth = paymentPayload.payload.authorization as any;
+        if (typeof auth.validAfter === "number") {
+          auth.validAfter = auth.validAfter.toString();
+        }
+        if (typeof auth.validBefore === "number") {
+          auth.validBefore = auth.validBefore.toString();
+        }
+      }
+
+      const requestPayload = isCommunityFacilitator
+        ? {
+            x402Version: 1,
+            paymentPayload,
+            paymentRequirements: requirements,
+          }
+        : {
+            x402Version: 1,
+            paymentHeader, // x402.org testnet uses base64 string
+            paymentRequirements: requirements,
+          };
 
       const response = await axios.post(
         `${facilitatorUrl}/verify`,
         requestPayload,
         {
           headers: { "Content-Type": "application/json" },
-          timeout: 10000, // 10 second timeout
+          timeout: 10000,
         }
       );
 

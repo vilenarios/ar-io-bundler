@@ -115,6 +115,13 @@ export async function createDataItemFromRaw(
     value: Date.now().toString(),
   });
 
+  // Validate all tags before creating data item
+  tags.forEach((tag, index) => {
+    if (typeof tag.name !== 'string' || typeof tag.value !== 'string') {
+      throw new Error(`Invalid tag at index ${index}: name=${typeof tag.name}(${JSON.stringify(tag.name)}), value=${typeof tag.value}(${JSON.stringify(tag.value)})`);
+    }
+  });
+
   // Create signer
   const signer = new ArweaveSigner(wallet);
 
