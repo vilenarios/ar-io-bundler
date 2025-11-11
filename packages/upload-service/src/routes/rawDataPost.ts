@@ -21,7 +21,6 @@ import { enqueue } from "../arch/queues";
 import { InMemoryDataItem } from "../bundles/streamingDataItem";
 import { dataCaches, fastFinalityIndexes, jobLabels } from "../constants";
 import { KoaContext } from "../server";
-import { W } from "../types/winston";
 import { fromB64Url, jwkToPublicArweaveAddress } from "../utils/base64";
 import { errorResponse } from "../utils/common";
 import { createDataItemFromRaw } from "../utils/createDataItem";
@@ -73,7 +72,12 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
 
   if (!paymentHeaderValue) {
     // No payment provided - return 402 Payment Required
-    return await send402PaymentRequired(ctx, parsedRequest.data.length, parsedRequest.contentType);
+    return await send402PaymentRequired(
+      ctx,
+      parsedRequest.data.length,
+      parsedRequest.contentType,
+      parsedRequest.tags
+    );
   }
 
   if (!contentLengthHeader) {
@@ -130,18 +134,28 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
     estimatedDataItemSize,
   });
 
-  // Get Winston cost from Arweave gateway
+  // Get Winston cost from Arweave gateway (exact cost for estimated data item size)
   const winstonCost = await ctx.state.arweaveGateway.getWinstonPriceForByteCount(
     estimatedDataItemSize
   );
 
-  // Apply 5% buffer here (oracle will apply additional 10% for total ~15.5% to match payment-service)
-  const winstonWithBuffer = Math.ceil(Number(winstonCost) * 1.05);
-
-  // Convert Winston to USDC (oracle applies additional 10% buffer internally)
+  // Convert Winston to USDC (exact conversion, no markup)
   const { X402PricingOracle } = await import("../utils/x402Pricing");
   const x402Oracle = new X402PricingOracle();
-  const usdcAmountRequired = await x402Oracle.getUSDCForWinston(W(winstonWithBuffer.toString()));
+  const exactUsdcAmount = await x402Oracle.getUSDCForWinston(winstonCost);
+
+  // Apply configured x402 pricing buffer (your fee/profit margin)
+  const x402BufferPercent = parseInt(process.env.X402_PRICING_BUFFER_PERCENT || "15", 10);
+  const usdcAmountRequired = Math.ceil(
+    Number(exactUsdcAmount) * (1 + x402BufferPercent / 100)
+  ).toString();
+
+  logger.info("Calculated x402 pricing with buffer", {
+    winstonCost: winstonCost.toString(),
+    exactUsdcAmount,
+    x402BufferPercent,
+    usdcAmountRequired,
+  });
 
   // Build payment requirements for verification
   const uploadServicePublicUrl = process.env.UPLOAD_SERVICE_PUBLIC_URL || "http://localhost:3001";
@@ -457,33 +471,59 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
 
 /**
  * Send 402 Payment Required response with x402 payment requirements
+ *
+ * IMPORTANT: This function MUST use identical pricing logic to the upload handler
+ * to ensure quote and actual payment amounts match.
  */
 async function send402PaymentRequired(
   ctx: KoaContext,
   byteCount: number,
-  mimeType?: string
+  mimeType?: string,
+  tags?: Array<{ name: string; value: string }>
 ): Promise<void> {
   const { logger } = ctx.state;
 
-  logger.info("Sending 402 Payment Required", { byteCount, mimeType });
+  logger.info("Sending 402 Payment Required", { byteCount, mimeType, tagCount: tags?.length || 0 });
 
-  // Calculate accurate pricing using the same method as actual upload
-  const estimatedDataItemSize = byteCount + 1500; // ANS-104 overhead
+  // Calculate pricing using IDENTICAL logic to upload handler
+  // Import estimation function
+  const { estimateDataItemSize } = await import("../utils/createDataItem");
 
-  // Get Winston cost from Arweave gateway
+  // Count tags: user tags + 7 system tags for x402
+  // System tags: Bundler, Upload-Type, Payer-Address, X402-TX-Hash, X402-Payment-ID, X402-Network, Upload-Timestamp
+  const userTagCount = tags?.length || 0;
+  const systemTagCount = 7; // x402 system tags
+  const contentTypeTagCount = mimeType ? 1 : 0;
+  const totalTagCount = userTagCount + systemTagCount + contentTypeTagCount;
+
+  // Estimate final data item size (raw data + ANS-104 overhead with accurate tag count)
+  const estimatedDataItemSize = estimateDataItemSize(byteCount, totalTagCount);
+
+  // Get Winston cost from Arweave gateway (exact cost for estimated data item size)
   const winstonCost = await ctx.state.arweaveGateway.getWinstonPriceForByteCount(
     estimatedDataItemSize
   );
 
-  // Convert Winston to USDC using the pricing oracle
+  // Convert Winston to USDC (exact conversion, no markup)
   const { X402PricingOracle } = await import("../utils/x402Pricing");
   const x402Oracle = new X402PricingOracle();
-  const usdcAmountRequired = await x402Oracle.getUSDCForWinston(winstonCost);
+  const exactUsdcAmount = await x402Oracle.getUSDCForWinston(winstonCost);
+
+  // Apply configured x402 pricing buffer (your fee/profit margin)
+  const x402BufferPercent = parseInt(process.env.X402_PRICING_BUFFER_PERCENT || "15", 10);
+  const usdcAmountRequired = Math.ceil(
+    Number(exactUsdcAmount) * (1 + x402BufferPercent / 100)
+  ).toString();
 
   logger.info("Calculated x402 price quote", {
     byteCount,
+    userTagCount,
+    systemTagCount,
+    totalTagCount,
     estimatedDataItemSize,
     winstonCost: winstonCost.toString(),
+    exactUsdcAmount,
+    x402BufferPercent,
     usdcAmountRequired,
   });
 

@@ -19,10 +19,11 @@ import axios from "axios";
 import logger from "../logger";
 import { W, Winston } from "../types/types";
 
-const x402PricingBufferPercent = 10; // 10% buffer for price fluctuations
-
 /**
  * Simple x402 pricing oracle for converting Winston to USDC
+ *
+ * NOTE: This oracle provides EXACT conversions without any markup.
+ * Pricing buffers/fees should be applied by the caller BEFORE calling these methods.
  */
 export class X402PricingOracle {
   private arPriceCache: { price: number; timestamp: number } | null = null;
@@ -76,6 +77,10 @@ export class X402PricingOracle {
 
   /**
    * Convert Winston to USDC atomic units (6 decimals)
+   *
+   * Returns EXACT conversion with NO markup/buffer.
+   * Caller should apply pricing buffer (X402_PRICING_BUFFER_PERCENT) separately.
+   *
    * @param winston - Amount in Winston (10^-12 AR)
    * @returns USDC amount in atomic units (10^-6 USDC)
    */
@@ -85,25 +90,21 @@ export class X402PricingOracle {
     // Convert Winston to AR (1 AR = 10^12 Winston)
     const arAmount = Number(winston.toString()) / 1e12;
 
-    // Convert AR to USD
+    // Convert AR to USD (EXACT, no markup)
     const usdAmount = arAmount * arPriceUSD;
 
-    // Add pricing buffer to account for price fluctuations
-    const bufferedUsdAmount = usdAmount * (1 + x402PricingBufferPercent / 100);
-
     // Convert USD to USDC atomic units (1 USDC = 10^6 atomic units)
-    const usdcAtomicUnits = Math.ceil(bufferedUsdAmount * 1e6);
+    const usdcAtomicUnits = Math.ceil(usdAmount * 1e6);
 
     // Ensure minimum of 0.1 cent (1000 atomic units = 0.001 USDC)
     const minUsdcAtomicUnits = 1000;
     const finalAmount = Math.max(usdcAtomicUnits, minUsdcAtomicUnits);
 
-    logger.debug("Converted Winston to USDC", {
+    logger.debug("Converted Winston to USDC (exact, no buffer)", {
       winston: winston.toString(),
       arAmount,
       arPriceUSD,
       usdAmount,
-      bufferedUsdAmount,
       usdcAtomicUnits: finalAmount,
     });
 
