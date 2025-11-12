@@ -97,37 +97,6 @@ export class X402Service {
   }
 
   /**
-   * Generate CDP authentication headers for Coinbase API requests
-   * Uses the Coinbase x402 SDK to create auth headers
-   */
-  private async getCdpAuthHeaders(
-    endpoint: "verify" | "settle"
-  ): Promise<Record<string, string>> {
-    if (!this.coinbaseFacilitatorConfig) {
-      logger.warn("CDP facilitator config not initialized - facilitator calls will fail");
-      return {};
-    }
-
-    try {
-      // Use SDK to create auth headers - it handles JWT generation internally
-      const authHeaders = await this.coinbaseFacilitatorConfig.createAuthHeaders();
-
-      logger.debug("Generated CDP auth headers using SDK", {
-        endpoint,
-      });
-
-      // Return the appropriate headers for the endpoint
-      return authHeaders[endpoint] || {};
-    } catch (error) {
-      logger.error("Failed to generate CDP auth headers via SDK", {
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-      return {};
-    }
-  }
-
-  /**
    * Verify an x402 payment without settling it
    */
   async verifyPayment(
@@ -283,7 +252,7 @@ export class X402Service {
         }
 
         // Generate CDP authentication headers if using Coinbase facilitator
-        const cdpAuthHeaders = await this.getCdpAuthHeaders("settle");
+        const authHeaders = await this.coinbaseFacilitatorConfig.createAuthHeaders();
 
         const response = await axios.post(
           `${networkConfig.facilitatorUrl}/settle`,
@@ -295,7 +264,7 @@ export class X402Service {
           {
             headers: {
               "Content-Type": "application/json",
-              ...cdpAuthHeaders,
+              ...authHeaders.settle,
             },
             timeout: 30000, // 30 second timeout
           }
@@ -443,7 +412,7 @@ export class X402Service {
       }
 
       // Generate CDP authentication headers if using Coinbase facilitator
-      const cdpAuthHeaders = await this.getCdpAuthHeaders("verify");
+      const authHeaders = await this.coinbaseFacilitatorConfig.createAuthHeaders();
 
       const response = await axios.post(
         `${facilitatorUrl}/verify`,
@@ -455,7 +424,7 @@ export class X402Service {
         {
           headers: {
             "Content-Type": "application/json",
-            ...cdpAuthHeaders,
+            ...authHeaders.verify,
           },
           timeout: 10000, // 10 second timeout
         }
