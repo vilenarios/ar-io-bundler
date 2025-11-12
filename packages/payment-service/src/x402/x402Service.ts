@@ -15,9 +15,10 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 import axios from "axios";
+import * as crypto from "crypto";
 import { ethers } from "ethers";
 
-import { X402NetworkConfig } from "../constants";
+import { cdpApiKeyId, cdpApiKeySecret, X402NetworkConfig } from "../constants";
 import logger from "../logger";
 
 // x402 Protocol Types
@@ -82,6 +83,80 @@ export class X402Service {
           new ethers.JsonRpcProvider(config.rpcUrl)
         );
       }
+    }
+  }
+
+  /**
+   * Generate CDP authentication headers for Coinbase API requests
+   * Uses CDP API Key to create JWT token
+   */
+  private getCdpAuthHeaders(
+    method: string,
+    path: string
+  ): Record<string, string> {
+    if (!cdpApiKeyId || !cdpApiKeySecret) {
+      logger.warn("CDP credentials not configured - facilitator calls will fail");
+      return {};
+    }
+
+    try {
+      // Create JWT header
+      const header = {
+        alg: "ES256",
+        typ: "JWT",
+        kid: cdpApiKeyId,
+      };
+
+      // Create JWT payload
+      const now = Math.floor(Date.now() / 1000);
+      const payload = {
+        sub: cdpApiKeyId,
+        iss: "cdp",
+        nbf: now,
+        exp: now + 60, // Token valid for 60 seconds
+        aud: ["cdp_service"],
+      };
+
+      // Encode header and payload
+      const encodedHeader = Buffer.from(JSON.stringify(header))
+        .toString("base64url");
+      const encodedPayload = Buffer.from(JSON.stringify(payload))
+        .toString("base64url");
+
+      // Create signature using ES256 (ECDSA with P-256 and SHA-256)
+      const message = `${encodedHeader}.${encodedPayload}`;
+
+      // CDP uses EC private key in PEM format
+      const sign = crypto.createSign("SHA256");
+      sign.update(message);
+      sign.end();
+
+      // Sign with the CDP API secret (should be PEM-formatted EC private key)
+      const signature = sign.sign(
+        {
+          key: cdpApiKeySecret,
+          format: "pem",
+          type: "sec1",
+        },
+        "base64url"
+      );
+
+      const jwt = `${message}.${signature}`;
+
+      logger.debug("Generated CDP JWT token for facilitator auth", {
+        keyId: cdpApiKeyId,
+        method,
+        path,
+      });
+
+      return {
+        Authorization: `Bearer ${jwt}`,
+      };
+    } catch (error) {
+      logger.error("Failed to generate CDP auth headers", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return {};
     }
   }
 
@@ -240,6 +315,9 @@ export class X402Service {
           }
         }
 
+        // Generate CDP authentication headers if using Coinbase facilitator
+        const cdpAuthHeaders = this.getCdpAuthHeaders("POST", "/settle");
+
         const response = await axios.post(
           `${networkConfig.facilitatorUrl}/settle`,
           {
@@ -248,7 +326,10 @@ export class X402Service {
             paymentRequirements: requirements,
           },
           {
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              ...cdpAuthHeaders,
+            },
             timeout: 30000, // 30 second timeout
           }
         );
@@ -394,6 +475,9 @@ export class X402Service {
         }
       }
 
+      // Generate CDP authentication headers if using Coinbase facilitator
+      const cdpAuthHeaders = this.getCdpAuthHeaders("POST", "/verify");
+
       const response = await axios.post(
         `${facilitatorUrl}/verify`,
         {
@@ -402,7 +486,10 @@ export class X402Service {
           paymentRequirements: requirements,
         },
         {
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...cdpAuthHeaders,
+          },
           timeout: 10000, // 10 second timeout
         }
       );
