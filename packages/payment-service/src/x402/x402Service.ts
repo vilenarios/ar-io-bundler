@@ -126,15 +126,41 @@ export class X402Service {
       // Create signature using ES256 (ECDSA with P-256 and SHA-256)
       const message = `${encodedHeader}.${encodedPayload}`;
 
-      // CDP uses EC private key in PEM format
+      // Prepare the private key in PEM format
+      let privateKeyPem = cdpApiKeySecret;
+
+      // If the key doesn't start with PEM headers, it might be base64-encoded
+      // Try to decode and wrap in PEM format
+      if (!privateKeyPem.includes("-----BEGIN")) {
+        try {
+          // First, try to decode as base64 in case it's a base64-encoded PEM
+          const decoded = Buffer.from(cdpApiKeySecret, "base64").toString("utf8");
+          if (decoded.includes("-----BEGIN")) {
+            // It was a base64-encoded PEM, use the decoded version
+            privateKeyPem = decoded;
+            logger.debug("Decoded base64-encoded PEM key");
+          } else {
+            // It's raw key bytes, wrap in PEM format
+            // For EC P-256 private key, wrap in SEC1 format
+            privateKeyPem = `-----BEGIN EC PRIVATE KEY-----\n${cdpApiKeySecret}\n-----END EC PRIVATE KEY-----`;
+            logger.debug("Wrapped raw key in PEM format");
+          }
+        } catch (decodeError) {
+          // If decode fails, try wrapping as-is
+          privateKeyPem = `-----BEGIN EC PRIVATE KEY-----\n${cdpApiKeySecret}\n-----END EC PRIVATE KEY-----`;
+          logger.debug("Failed to decode, wrapping as-is in PEM format");
+        }
+      }
+
+      // Create signature
       const sign = crypto.createSign("SHA256");
       sign.update(message);
       sign.end();
 
-      // Sign with the CDP API secret (should be PEM-formatted EC private key)
+      // Sign with the CDP API secret (PEM-formatted EC private key)
       const signature = sign.sign(
         {
-          key: cdpApiKeySecret,
+          key: privateKeyPem,
           format: "pem",
           type: "sec1",
         },
@@ -155,6 +181,7 @@ export class X402Service {
     } catch (error) {
       logger.error("Failed to generate CDP auth headers", {
         error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
       });
       return {};
     }
