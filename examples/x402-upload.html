@@ -758,10 +758,9 @@
           }
 
           const baseAmount = BigInt(requirements.maxAmountRequired);
-          const bufferedAmount = (baseAmount * BigInt(101)) / BigInt(100);
-          const amount = ethers.formatUnits(bufferedAmount, 6);
+          const amount = ethers.formatUnits(baseAmount, 6);
           paidUsdcAmount = amount; // Store for results display
-          log(`💰 Payment required: ${amount} USDC (base: ${ethers.formatUnits(baseAmount, 6)} + 1% buffer)`, 'warning');
+          log(`💰 Payment required: ${amount} USDC`, 'warning');
 
           const currentTime = Math.floor(Date.now() / 1000);
           const validAfter = currentTime - 3600;
@@ -776,7 +775,7 @@
           const authorization = {
             from: userAddress,
             to: requirements.payTo,
-            value: bufferedAmount.toString(),
+            value: baseAmount.toString(),
             validAfter,
             validBefore,
             nonce,
