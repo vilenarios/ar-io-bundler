@@ -15,8 +15,9 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 import axios from "axios";
-import * as crypto from "crypto";
 import { ethers } from "ethers";
+// @ts-ignore - @coinbase/x402 doesn't export types
+import { createFacilitatorConfig } from "@coinbase/x402";
 
 import { cdpApiKeyId, cdpApiKeySecret, X402NetworkConfig } from "../constants";
 import logger from "../logger";
@@ -73,6 +74,7 @@ export interface X402PaymentRequiredResponse {
 
 export class X402Service {
   private providers: Map<string, ethers.JsonRpcProvider> = new Map();
+  private coinbaseFacilitatorConfig: any;
 
   constructor(private networks: Record<string, X402NetworkConfig>) {
     // Initialize providers for enabled networks
@@ -84,102 +86,40 @@ export class X402Service {
         );
       }
     }
+
+    // Initialize Coinbase facilitator config with CDP credentials
+    if (cdpApiKeyId && cdpApiKeySecret) {
+      this.coinbaseFacilitatorConfig = createFacilitatorConfig(cdpApiKeyId, cdpApiKeySecret);
+      logger.info("Coinbase x402 facilitator configured with CDP credentials");
+    } else {
+      logger.warn("CDP credentials not configured - Coinbase facilitator will not work");
+    }
   }
 
   /**
    * Generate CDP authentication headers for Coinbase API requests
-   * Uses CDP API Key to create JWT token
+   * Uses the Coinbase x402 SDK to create auth headers
    */
-  private getCdpAuthHeaders(
-    method: string,
-    path: string
-  ): Record<string, string> {
-    if (!cdpApiKeyId || !cdpApiKeySecret) {
-      logger.warn("CDP credentials not configured - facilitator calls will fail");
+  private async getCdpAuthHeaders(
+    endpoint: "verify" | "settle"
+  ): Promise<Record<string, string>> {
+    if (!this.coinbaseFacilitatorConfig) {
+      logger.warn("CDP facilitator config not initialized - facilitator calls will fail");
       return {};
     }
 
     try {
-      // Create JWT header
-      const header = {
-        alg: "ES256",
-        typ: "JWT",
-        kid: cdpApiKeyId,
-      };
+      // Use SDK to create auth headers - it handles JWT generation internally
+      const authHeaders = await this.coinbaseFacilitatorConfig.createAuthHeaders();
 
-      // Create JWT payload
-      const now = Math.floor(Date.now() / 1000);
-      const payload = {
-        sub: cdpApiKeyId,
-        iss: "cdp",
-        nbf: now,
-        exp: now + 60, // Token valid for 60 seconds
-        aud: ["cdp_service"],
-      };
-
-      // Encode header and payload
-      const encodedHeader = Buffer.from(JSON.stringify(header))
-        .toString("base64url");
-      const encodedPayload = Buffer.from(JSON.stringify(payload))
-        .toString("base64url");
-
-      // Create signature using ES256 (ECDSA with P-256 and SHA-256)
-      const message = `${encodedHeader}.${encodedPayload}`;
-
-      // Prepare the private key in PEM format
-      let privateKeyPem = cdpApiKeySecret;
-
-      // If the key doesn't start with PEM headers, it might be base64-encoded
-      // Try to decode and wrap in PEM format
-      if (!privateKeyPem.includes("-----BEGIN")) {
-        try {
-          // First, try to decode as base64 in case it's a base64-encoded PEM
-          const decoded = Buffer.from(cdpApiKeySecret, "base64").toString("utf8");
-          if (decoded.includes("-----BEGIN")) {
-            // It was a base64-encoded PEM, use the decoded version
-            privateKeyPem = decoded;
-            logger.debug("Decoded base64-encoded PEM key");
-          } else {
-            // It's raw key bytes, wrap in PEM format
-            // For EC P-256 private key, wrap in SEC1 format
-            privateKeyPem = `-----BEGIN EC PRIVATE KEY-----\n${cdpApiKeySecret}\n-----END EC PRIVATE KEY-----`;
-            logger.debug("Wrapped raw key in PEM format");
-          }
-        } catch (decodeError) {
-          // If decode fails, try wrapping as-is
-          privateKeyPem = `-----BEGIN EC PRIVATE KEY-----\n${cdpApiKeySecret}\n-----END EC PRIVATE KEY-----`;
-          logger.debug("Failed to decode, wrapping as-is in PEM format");
-        }
-      }
-
-      // Create signature
-      const sign = crypto.createSign("SHA256");
-      sign.update(message);
-      sign.end();
-
-      // Sign with the CDP API secret (PEM-formatted EC private key)
-      const signature = sign.sign(
-        {
-          key: privateKeyPem,
-          format: "pem",
-          type: "sec1",
-        },
-        "base64url"
-      );
-
-      const jwt = `${message}.${signature}`;
-
-      logger.debug("Generated CDP JWT token for facilitator auth", {
-        keyId: cdpApiKeyId,
-        method,
-        path,
+      logger.debug("Generated CDP auth headers using SDK", {
+        endpoint,
       });
 
-      return {
-        Authorization: `Bearer ${jwt}`,
-      };
+      // Return the appropriate headers for the endpoint
+      return authHeaders[endpoint] || {};
     } catch (error) {
-      logger.error("Failed to generate CDP auth headers", {
+      logger.error("Failed to generate CDP auth headers via SDK", {
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
       });
@@ -343,7 +283,7 @@ export class X402Service {
         }
 
         // Generate CDP authentication headers if using Coinbase facilitator
-        const cdpAuthHeaders = this.getCdpAuthHeaders("POST", "/settle");
+        const cdpAuthHeaders = await this.getCdpAuthHeaders("settle");
 
         const response = await axios.post(
           `${networkConfig.facilitatorUrl}/settle`,
@@ -503,7 +443,7 @@ export class X402Service {
       }
 
       // Generate CDP authentication headers if using Coinbase facilitator
-      const cdpAuthHeaders = this.getCdpAuthHeaders("POST", "/verify");
+      const cdpAuthHeaders = await this.getCdpAuthHeaders("verify");
 
       const response = await axios.post(
         `${facilitatorUrl}/verify`,

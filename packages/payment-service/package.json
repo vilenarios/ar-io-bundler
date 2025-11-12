@@ -68,6 +68,7 @@
   "dependencies": {
     "@ar.io/sdk": "^3.8.2",
     "@ardrive/ardrive-promise-cache": "^1.4.0",
+    "@coinbase/x402": "^0.7.1",
     "@koa/cors": "^5.0.0",
     "@permaweb/aoconnect": "0.0.57",
     "@solana/web3.js": "^1.98.2",
@@ -97,6 +98,7 @@
     "stripe": "^14.11.0",
     "validator": "^13.11.0",
     "winston": "^3.8.2",
+    "x402": "^0.7.1",
     "yaml": "^2.2.2"
   },
   "resolutions": {

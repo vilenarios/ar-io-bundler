@@ -220,6 +220,7 @@ __metadata:
   dependencies:
     "@ar.io/sdk": ^3.8.2
     "@ardrive/ardrive-promise-cache": ^1.4.0
+    "@coinbase/x402": ^0.7.1
     "@istanbuljs/nyc-config-typescript": ^1.0.2
     "@koa/cors": ^5.0.0
     "@permaweb/aoconnect": 0.0.57
@@ -281,6 +282,7 @@ __metadata:
     typescript: ^4.7.4
     validator: ^13.11.0
     winston: ^3.8.2
+    x402: ^0.7.1
     yaml: ^2.2.2
   languageName: unknown
   linkType: soft
