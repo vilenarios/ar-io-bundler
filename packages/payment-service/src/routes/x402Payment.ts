@@ -103,9 +103,9 @@ export async function x402PaymentRoute(ctx: KoaContext, next: Next) {
   });
 
   try {
-    // Calculate pricing for the upload (if PAYG/hybrid)
+    // Calculate winston cost for accounting purposes (NOT for payment verification)
+    // Payment verification uses authorization.value to avoid race conditions
     let winstonCost = W("0");
-    let usdcAmountRequired = "0";
 
     if (byteCount) {
       const { reward: winstonPrice } =
@@ -117,10 +117,6 @@ export async function x402PaymentRoute(ctx: KoaContext, next: Next) {
       winstonCost = W(
         Math.ceil(winstonPrice * (1 + x402PricingBufferPercent / 100)).toString()
       );
-
-      // Convert to USDC
-      const x402Oracle = new X402PricingOracle();
-      usdcAmountRequired = await x402Oracle.getUSDCForWinston(winstonCost);
     }
 
     // Decode payment header to extract payment details
@@ -153,10 +149,13 @@ export async function x402PaymentRoute(ctx: KoaContext, next: Next) {
     const resourceUrl = `${uploadServicePublicUrl}/v1/tx`;
 
     // Build payment requirements for verification
+    // IMPORTANT: Use authorization.value (what client authorized) not usdcAmountRequired (recalculated)
+    // Recalculating causes race conditions due to AR price volatility between quote and payment
+    // x402 spec allows overpayment, so if client authorized X, we should accept X
     const requirements = {
       scheme: "exact",
       network,
-      maxAmountRequired: mode === "topup" ? authorization.value : usdcAmountRequired,
+      maxAmountRequired: authorization.value, // Use what client actually authorized
       resource: resourceUrl,
       description: `Upload ${byteCount || 0} bytes to Arweave via Turbo`,
       mimeType: "application/octet-stream",
