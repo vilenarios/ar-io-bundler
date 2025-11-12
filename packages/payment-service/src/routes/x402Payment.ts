@@ -143,20 +143,16 @@ export async function x402PaymentRoute(ctx: KoaContext, next: Next) {
       throw new Error(`Network configuration not found for ${network}`);
     }
 
-    // Build absolute URL for resource (required by x402 facilitator)
-    // Use configured public URL for the upload service
-    const uploadServicePublicUrl = process.env.UPLOAD_SERVICE_PUBLIC_URL || "http://localhost:3001";
-    const resourceUrl = `${uploadServicePublicUrl}/v1/tx`;
-
     // Build payment requirements for verification
     // IMPORTANT: Use authorization.value (what client authorized) not usdcAmountRequired (recalculated)
     // Recalculating causes race conditions due to AR price volatility between quote and payment
     // x402 spec allows overpayment, so if client authorized X, we should accept X
+    // IMPORTANT: resource MUST match the quote exactly (relative path, not full URL)
     const requirements = {
       scheme: "exact",
       network,
       maxAmountRequired: authorization.value, // Use what client actually authorized
-      resource: resourceUrl,
+      resource: "/v1/tx", // MUST match quote exactly - relative path, not full URL
       description: `Upload ${byteCount || 0} bytes to Arweave via Turbo`,
       mimeType: "application/octet-stream",
       asset: networkConfig.usdcAddress,
@@ -169,7 +165,11 @@ export async function x402PaymentRoute(ctx: KoaContext, next: Next) {
     };
 
     // Verify the payment
-    logger.debug("Verifying x402 payment", { requirements });
+    logger.info("Verifying x402 payment with requirements", {
+      requirements,
+      authorizationValue: authorization.value,
+      paymentNetwork: network,
+    });
     const verification = await x402Service.verifyPayment(
       paymentHeader,
       requirements
