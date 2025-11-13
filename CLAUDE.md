@@ -15,6 +15,42 @@ This is the **AR.IO Bundler** - a complete ANS-104 data bundling platform for Ar
 - `packages/payment-service/CLAUDE.md` - Payment service architecture and commands
 - `packages/upload-service/CLAUDE.md` - Upload service architecture and commands
 
+## ⚠️ CRITICAL: Service Restart Protocol
+
+**NEVER use `pm2 restart` directly! ALWAYS use these scripts:**
+
+```bash
+# Stop services only (keeps Docker running)
+./scripts/stop.sh --services-only
+
+# Start all services
+./scripts/start.sh
+
+# Restart services only (convenience)
+./scripts/restart.sh
+
+# Restart everything including Docker
+./scripts/restart.sh --with-docker
+```
+
+**Why this matters:**
+- Scripts ensure proper environment variable loading
+- Scripts verify infrastructure health before starting
+- Scripts check builds are up to date
+- Scripts provide clear status output
+- `pm2 restart` can lead to stale code or environment issues
+
+**When rebuilding code:**
+```bash
+# Correct workflow
+cd packages/payment-service && yarn build
+./scripts/stop.sh --services-only
+./scripts/start.sh
+
+# WRONG - do not use
+pm2 restart payment-service  # ❌ May use stale env vars
+```
+
 ## Common Commands
 
 ### Development Setup
