@@ -426,6 +426,7 @@
     let selectedFile;
     let currentMode = 'raw'; // 'raw' or 'signed'
     let paidUsdcAmount = null; // Store USDC amount paid
+    let dataSigner = null; // Reusable MetaMask signer for arbundles (signed mode)
 
     const NETWORK_CONFIG = {
       'base-sepolia': {
@@ -440,7 +441,7 @@
       },
     };
 
-    function switchMode(mode) {
+    async function switchMode(mode) {
       currentMode = mode;
 
       // Update tab styling
@@ -459,6 +460,13 @@
       } else {
         document.getElementById('info-raw').classList.add('hidden');
         document.getElementById('info-signed').classList.remove('hidden');
+
+        // Initialize data signer if wallet already connected
+        if (signer && !dataSigner) {
+          log('Initializing data signer for signed mode...', 'info');
+          dataSigner = new MetaMaskSigner(signer, userAddress);
+          await dataSigner.setPublicKey();
+        }
       }
 
       log(`Switched to ${mode === 'raw' ? 'Raw Upload' : 'Signed Data Item'} mode`, 'info');
@@ -539,6 +547,13 @@
 
         log(`USDC Balance: ${balanceFormatted} USDC`, 'info');
 
+        // Initialize data signer for signed mode (derive public key once)
+        if (currentMode === 'signed') {
+          log('Initializing data signer for signed mode...', 'info');
+          dataSigner = new MetaMaskSigner(signer, userAddress);
+          await dataSigner.setPublicKey();
+        }
+
         if (selectedFile) {
           document.getElementById('uploadBtn').disabled = false;
         }
@@ -616,7 +631,7 @@
 
       async setPublicKey() {
         if (!this.publicKey) {
-          const message = 'Derive public key for Arbundles';
+          const message = 'Authorize x402 Arweave uploads for this session';
           const signature = await this.signer.signMessage(message);
           const messageHash = ethers.hashMessage(message);
           const recoveredPublicKey = ethers.SigningKey.recoverPublicKey(messageHash, signature);
@@ -626,7 +641,7 @@
             bytes[i / 2] = parseInt(publicKeyHex.substr(i, 2), 16);
           }
           this.publicKey = bytes;
-          log(`Public key derived: ${this.publicKey.length} bytes`, 'info');
+          log(`✅ Session authorized for data signing (public key: ${this.publicKey.length} bytes)`, 'success');
         }
       }
 
@@ -685,9 +700,6 @@
           // SIGNED DATA ITEM MODE
           log('Mode: Signed Data Item - you sign with your wallet', 'info');
           log('Creating ANS-104 data item...', 'info');
-
-          const dataSigner = new MetaMaskSigner(signer, userAddress);
-          await dataSigner.setPublicKey();
 
           const tags = [
             { name: 'Content-Type', value: selectedFile.type || 'application/octet-stream' },
