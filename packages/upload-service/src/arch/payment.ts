@@ -285,12 +285,7 @@ export class TurboPaymentService implements PaymentService {
       headers: {
         Authorization: `Bearer ${token}`,
       },
-      validateStatus: (status) => {
-        if (status >= 500) {
-          throw new Error(`Payment service unavailable. Status: ${status}`);
-        }
-        return true;
-      },
+      validateStatus: () => true, // Accept all status codes, handle errors after
     });
 
     logger.debug("Payment service response.", {
@@ -298,6 +293,10 @@ export class TurboPaymentService implements PaymentService {
       statusText,
       data,
     });
+
+    if (status >= 500) {
+      throw new Error(`Payment service unavailable. Status: ${status}`);
+    }
 
     if (typeof data === "string") {
       throw new Error(
@@ -389,12 +388,7 @@ export class TurboPaymentService implements PaymentService {
       headers: {
         Authorization: `Bearer ${token}`,
       },
-      validateStatus: (status) => {
-        if (status >= 500) {
-          throw new Error(`Payment service unavailable. Status: ${status}`);
-        }
-        return true;
-      },
+      validateStatus: () => true, // Accept all status codes, handle errors after
     });
 
     logger.debug("Payment service response.", {
@@ -402,6 +396,10 @@ export class TurboPaymentService implements PaymentService {
       statusText,
       data,
     });
+
+    if (status >= 500) {
+      throw new Error(`Payment service unavailable. Status: ${status}`);
+    }
 
     const walletExists = +status !== 404;
     const costOfDataItem = +status === 200 ? W(+data) : W(0);
@@ -574,18 +572,17 @@ export class TurboPaymentService implements PaymentService {
     const { status, statusText, data } = await this.axios.get<
       X402PaymentRequiredResponse | string
     >(url.href, {
-      validateStatus: (status) => {
-        if (status >= 500) {
-          throw new Error(`Payment service unavailable. Status: ${status}`);
-        }
-        return true;
-      },
+      validateStatus: () => true, // Accept all status codes, handle errors after
     });
 
     logger.debug("Payment service x402 price response.", {
       status,
       statusText,
     });
+
+    if (status >= 500) {
+      throw new Error(`Payment service unavailable. Status: ${status}`);
+    }
 
     if (typeof data === "string") {
       throw new Error(
@@ -638,12 +635,7 @@ export class TurboPaymentService implements PaymentService {
           mode,
         },
         {
-          validateStatus: (status) => {
-            if (status >= 500) {
-              throw new Error(`Payment service unavailable. Status: ${status}`);
-            }
-            return true;
-          },
+          validateStatus: () => true, // Accept all status codes, handle errors after
         }
       );
 
@@ -651,6 +643,10 @@ export class TurboPaymentService implements PaymentService {
         status,
         statusText,
       });
+
+      if (status >= 500) {
+        throw new Error(`Payment service unavailable. Status: ${status}`);
+      }
 
       if (typeof data === "string") {
         throw new Error(
@@ -713,12 +709,7 @@ export class TurboPaymentService implements PaymentService {
           actualByteCount,
         },
         {
-          validateStatus: (status) => {
-            if (status >= 500) {
-              throw new Error(`Payment service unavailable. Status: ${status}`);
-            }
-            return true;
-          },
+          validateStatus: () => true, // Accept all status codes, handle errors after
         }
       );
 
@@ -726,6 +717,10 @@ export class TurboPaymentService implements PaymentService {
         status,
         statusText,
       });
+
+      if (status >= 500) {
+        throw new Error(`Payment service unavailable. Status: ${status}`);
+      }
 
       if (typeof data === "string") {
         throw new Error(
