@@ -140,9 +140,8 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
   );
 
   // Convert Winston to USDC (exact conversion, no markup)
-  const { X402PricingOracle } = await import("../utils/x402Pricing");
-  const x402Oracle = new X402PricingOracle();
-  const exactUsdcAmount = await x402Oracle.getUSDCForWinston(winstonCost);
+  const { x402PricingOracle } = await import("../utils/x402Pricing");
+  const exactUsdcAmount = await x402PricingOracle.getUSDCForWinston(winstonCost);
 
   // Apply configured x402 pricing buffer (your fee/profit margin)
   const x402BufferPercent = parseInt(process.env.X402_PRICING_BUFFER_PERCENT || "15", 10);
@@ -306,7 +305,8 @@ export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Pro
   const payloadContentType = parsedRequest.contentType || "application/octet-stream";
 
   // Store x402 payment record in database
-  const wincPaid = await x402Oracle.getWinstonForUSDC(paymentPayload.payload.authorization.value);
+  const { x402PricingOracle: oracle } = await import("../utils/x402Pricing");
+  const wincPaid = await oracle.getWinstonForUSDC(paymentPayload.payload.authorization.value);
   await ctx.state.database.insertX402Payment({
     paymentId,
     txHash: settlement.transactionHash!,
@@ -505,9 +505,8 @@ async function send402PaymentRequired(
   );
 
   // Convert Winston to USDC (exact conversion, no markup)
-  const { X402PricingOracle } = await import("../utils/x402Pricing");
-  const x402Oracle = new X402PricingOracle();
-  const exactUsdcAmount = await x402Oracle.getUSDCForWinston(winstonCost);
+  const { x402PricingOracle } = await import("../utils/x402Pricing");
+  const exactUsdcAmount = await x402PricingOracle.getUSDCForWinston(winstonCost);
 
   // Apply configured x402 pricing buffer (your fee/profit margin)
   const x402BufferPercent = parseInt(process.env.X402_PRICING_BUFFER_PERCENT || "15", 10);
