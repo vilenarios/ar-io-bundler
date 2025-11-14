@@ -24,7 +24,7 @@ import {
   cdpClientKey,
 } from "../constants";
 import { BadQueryParam } from "../database/errors";
-import { X402PricingOracle } from "../pricing/x402PricingOracle";
+import { x402PricingOracle } from "../pricing/x402PricingOracle";
 import { KoaContext } from "../server";
 import { UserAddressType } from "../database/dbTypes";
 import { ByteCount } from "../types/byteCount";
@@ -91,9 +91,8 @@ export async function x402PriceRoute(ctx: KoaContext, next: Next) {
       winstonPrice * (1 + x402PricingBufferPercent / 100)
     );
 
-    // Convert Winston to USDC
-    const x402Oracle = new X402PricingOracle();
-    let usdcAmount = await x402Oracle.getUSDCForWinston(
+    // Convert Winston to USDC (using singleton for caching)
+    let usdcAmount = await x402PricingOracle.getUSDCForWinston(
       W(winstonWithBuffer.toString())
     );
 

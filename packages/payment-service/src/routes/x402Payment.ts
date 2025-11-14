@@ -24,7 +24,7 @@ import {
 } from "../constants";
 import { DataItemId, UserAddressType, X402PaymentMode } from "../database/dbTypes";
 import { X402PaymentError } from "../database/errors";
-import { X402PricingOracle } from "../pricing/x402PricingOracle";
+import { x402PricingOracle } from "../pricing/x402PricingOracle";
 import { KoaContext } from "../server";
 import { ByteCount } from "../types/byteCount";
 import { W } from "../types/winston";
@@ -143,9 +143,8 @@ export async function x402PaymentRoute(ctx: KoaContext, next: Next) {
         Math.ceil(winstonPrice * (1 + x402PricingBufferPercent / 100)).toString()
       );
 
-      // Convert Winston to USDC with CURRENT AR price
-      const x402Oracle = new X402PricingOracle();
-      usdcAmountRequired = await x402Oracle.getUSDCForWinston(winstonCost);
+      // Convert Winston to USDC with CURRENT AR price (using singleton for caching)
+      usdcAmountRequired = await x402PricingOracle.getUSDCForWinston(winstonCost);
 
       // Apply minimum payment threshold (Coinbase facilitator minimum: 0.001 USDC = 1,000 atomic units)
       // Configurable via X402_MINIMUM_PAYMENT_USDC (in whole dollars, e.g., "0.001")
@@ -230,9 +229,8 @@ export async function x402PaymentRoute(ctx: KoaContext, next: Next) {
       return next();
     }
 
-    // Convert USDC paid to Winston
-    const x402Oracle = new X402PricingOracle();
-    const wincPaid = await x402Oracle.getWinstonForUSDC(authorization.value);
+    // Convert USDC paid to Winston (using singleton for caching)
+    const wincPaid = await x402PricingOracle.getWinstonForUSDC(authorization.value);
 
     // Create payment transaction record
     const payment = await paymentDatabase.createX402Payment({

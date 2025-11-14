@@ -24,7 +24,7 @@ import {
 } from "../constants";
 import { UserAddressType } from "../database/dbTypes";
 import { BadQueryParam } from "../database/errors";
-import { X402PricingOracle } from "../pricing/x402PricingOracle";
+import { x402PricingOracle } from "../pricing/x402PricingOracle";
 import { KoaContext } from "../server";
 import { ByteCount } from "../types/byteCount";
 import { W } from "../types/winston";
@@ -91,9 +91,8 @@ export async function x402TopUpRoute(ctx: KoaContext, next: Next) {
         winstonPrice * (1 + x402PricingBufferPercent / 100)
       );
 
-      // Convert Winston to USDC
-      const x402Oracle = new X402PricingOracle();
-      const usdcAmount = await x402Oracle.getUSDCForWinston(
+      // Convert Winston to USDC (using singleton for caching)
+      const usdcAmount = await x402PricingOracle.getUSDCForWinston(
         W(winstonWithBuffer.toString())
       );
 
@@ -180,9 +179,8 @@ export async function x402TopUpRoute(ctx: KoaContext, next: Next) {
       Math.ceil(winstonPrice * (1 + x402PricingBufferPercent / 100)).toString()
     );
 
-    // Convert to USDC
-    const x402Oracle = new X402PricingOracle();
-    const usdcAmountRequired = await x402Oracle.getUSDCForWinston(winstonCost);
+    // Convert to USDC (using singleton for caching)
+    const usdcAmountRequired = await x402PricingOracle.getUSDCForWinston(winstonCost);
 
     // Decode payment header
     const paymentPayload = JSON.parse(
@@ -268,8 +266,8 @@ export async function x402TopUpRoute(ctx: KoaContext, next: Next) {
       return next();
     }
 
-    // Convert USDC paid to Winston
-    const wincPaid = await x402Oracle.getWinstonForUSDC(authorization.value);
+    // Convert USDC paid to Winston (using singleton for caching)
+    const wincPaid = await x402PricingOracle.getWinstonForUSDC(authorization.value);
 
     // Create payment transaction record
     const payment = await paymentDatabase.createX402Payment({
