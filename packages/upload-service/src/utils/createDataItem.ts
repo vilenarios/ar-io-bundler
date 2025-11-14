@@ -159,8 +159,9 @@ export function estimateDataItemSize(rawDataSize: number, tagCount = 0): number 
   const perTagOverhead = 64;
   const tagOverhead = tagCount * perTagOverhead;
 
-  // Add bundler attribution tags (Bundler, Payer-Address, Content-Type)
-  const systemTagOverhead = 3 * perTagOverhead;
+  // NOTE: System tags (Bundler, Upload-Type, Payer-Address, X402-*, Upload-Timestamp, Content-Type)
+  // are now included in the tagCount parameter by the caller (rawDataPost.ts lines 119-124, 492-497)
+  // No additional system tag overhead needed here.
 
-  return rawDataSize + signatureOverhead + ownerOverhead + headerOverhead + tagOverhead + systemTagOverhead;
+  return rawDataSize + signatureOverhead + ownerOverhead + headerOverhead + tagOverhead;
 }
