@@ -228,7 +228,9 @@ export class X402Service {
 
       if (facilitatorUrls.length > 0) {
         // Try each facilitator until one succeeds
-        let lastError: string | undefined;
+        let verificationSucceeded = false;
+        const errors: string[] = [];
+
         for (const facilitatorUrl of facilitatorUrls) {
           const facilitatorResult = await this.verifyWithFacilitator(
             paymentHeader,
@@ -237,27 +239,31 @@ export class X402Service {
           );
 
           if (facilitatorResult.isValid) {
-            // Verification succeeded, continue
+            // Verification succeeded!
+            verificationSucceeded = true;
+            logger.debug("Facilitator verification succeeded", {
+              facilitator: facilitatorUrl,
+            });
             break;
           } else {
             // Try next facilitator
-            lastError = facilitatorResult.invalidReason;
+            errors.push(`${facilitatorUrl}: ${facilitatorResult.invalidReason}`);
             logger.warn("Facilitator verification failed, trying next", {
               facilitator: facilitatorUrl,
-              error: lastError,
+              error: facilitatorResult.invalidReason,
             });
           }
         }
 
-        // If all facilitators failed, return the last error
-        if (lastError) {
+        // If all facilitators failed, return error
+        if (!verificationSucceeded) {
           logger.error("All facilitators failed verification", {
             facilitatorCount: facilitatorUrls.length,
-            lastError,
+            errors,
           });
           return {
             isValid: false,
-            invalidReason: `All facilitators failed verification: ${lastError}`,
+            invalidReason: `All facilitators failed: ${errors.join("; ")}`,
           };
         }
       }
@@ -396,9 +402,12 @@ export class X402Service {
       isCommunityFacilitator,
     });
 
+    // Clone payload to avoid mutating original (important for fallback retries)
+    const clonedPayload = JSON.parse(JSON.stringify(paymentPayload));
+
     // Prepare timestamps - convert to strings for facilitators
-    if (paymentPayload.payload?.authorization) {
-      const auth = paymentPayload.payload.authorization as any;
+    if (clonedPayload.payload?.authorization) {
+      const auth = clonedPayload.payload.authorization as any;
       if (typeof auth.validAfter === "number") {
         auth.validAfter = auth.validAfter.toString();
       }
@@ -410,7 +419,7 @@ export class X402Service {
     // Build request payload based on facilitator type
     const requestPayload = {
       x402Version: 1,
-      paymentPayload,
+      paymentPayload: clonedPayload,
       paymentRequirements: requirements,
     };
 
