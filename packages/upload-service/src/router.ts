@@ -45,6 +45,9 @@ const serveRoutesAndV1 = (path: string[]) =>
 // Raw data post routes
 router.post(serveRoutesAndV1(["/tx", "/tx/:token"]), dataItemRoute);
 
+// x402 signed data item route (same behavior as /tx)
+router.post(serveRoutesAndV1(["/x402/data-item/signed"]), dataItemRoute);
+
 /**
  * START TEMPORARY PATCH TO SUPPORT up.arweave.net
  */
