@@ -379,6 +379,19 @@ export type X402PaymentMode = (typeof x402PaymentModes)[number];
 export const defaultX402PaymentMode: X402PaymentMode =
   (process.env.X402_DEFAULT_MODE as X402PaymentMode) || "hybrid";
 
+// Parse comma-separated facilitator URLs from environment variable
+// Returns array of trimmed URLs, or undefined if env var not set
+function parseFacilitatorUrls(envVar: string | undefined): string[] | undefined {
+  if (!envVar) return undefined;
+  return envVar.split(',').map(url => url.trim()).filter(url => url.length > 0);
+}
+
+// Default facilitators for Base networks (if not configured via env)
+const DEFAULT_BASE_FACILITATORS = [
+  "https://api.cdp.coinbase.com/platform/v2/x402", // Coinbase (primary)
+  "https://facilitator.mogami.tech", // Mogami (fallback)
+];
+
 // x402 network configurations
 export interface X402NetworkConfig {
   chainId: number;
@@ -395,10 +408,7 @@ export const x402Networks: Record<string, X402NetworkConfig> = {
     chainId: 8453,
     usdcAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
     rpcUrl: process.env.BASE_MAINNET_RPC_URL || "https://mainnet.base.org",
-    facilitatorUrls: [
-      process.env.X402_FACILITATOR_URL_BASE || "https://api.cdp.coinbase.com/platform/v2/x402",
-      "https://facilitator.mogami.tech", // Mogami community facilitator (fallback)
-    ].filter(Boolean),
+    facilitatorUrls: parseFacilitatorUrls(process.env.X402_FACILITATOR_URLS_BASE) || DEFAULT_BASE_FACILITATORS,
     enabled: process.env.X402_BASE_ENABLED !== "false",
     minConfirmations: +(process.env.X402_BASE_MIN_CONFIRMATIONS || 1),
   },
@@ -407,10 +417,7 @@ export const x402Networks: Record<string, X402NetworkConfig> = {
     chainId: 8453,
     usdcAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
     rpcUrl: process.env.BASE_MAINNET_RPC_URL || "https://mainnet.base.org",
-    facilitatorUrls: [
-      process.env.X402_FACILITATOR_URL_BASE || "https://api.cdp.coinbase.com/platform/v2/x402",
-      "https://facilitator.mogami.tech", // Mogami community facilitator (fallback)
-    ].filter(Boolean),
+    facilitatorUrls: parseFacilitatorUrls(process.env.X402_FACILITATOR_URLS_BASE) || DEFAULT_BASE_FACILITATORS,
     enabled: process.env.X402_BASE_ENABLED !== "false",
     minConfirmations: +(process.env.X402_BASE_MIN_CONFIRMATIONS || 1),
   },
@@ -419,9 +426,7 @@ export const x402Networks: Record<string, X402NetworkConfig> = {
     usdcAddress: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
     rpcUrl:
       process.env.ETHEREUM_MAINNET_RPC_URL || "https://cloudflare-eth.com/",
-    facilitatorUrls: process.env.X402_FACILITATOR_URL_ETH
-      ? [process.env.X402_FACILITATOR_URL_ETH]
-      : undefined,
+    facilitatorUrls: parseFacilitatorUrls(process.env.X402_FACILITATOR_URLS_ETH),
     enabled: process.env.X402_ETH_ENABLED === "true", // Default: false (enable Base first)
     minConfirmations: +(process.env.X402_ETH_MIN_CONFIRMATIONS || 3),
   },
@@ -429,9 +434,7 @@ export const x402Networks: Record<string, X402NetworkConfig> = {
     chainId: 137,
     usdcAddress: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
     rpcUrl: process.env.POLYGON_MAINNET_RPC_URL || "https://polygon-rpc.com/",
-    facilitatorUrls: process.env.X402_FACILITATOR_URL_POLYGON
-      ? [process.env.X402_FACILITATOR_URL_POLYGON]
-      : undefined,
+    facilitatorUrls: parseFacilitatorUrls(process.env.X402_FACILITATOR_URLS_POLYGON),
     enabled: process.env.X402_POLYGON_ENABLED === "true", // Default: false
     minConfirmations: +(process.env.X402_POLYGON_MIN_CONFIRMATIONS || 10),
   },
@@ -439,9 +442,7 @@ export const x402Networks: Record<string, X402NetworkConfig> = {
     chainId: 84532,
     usdcAddress: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
     rpcUrl: process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org",
-    facilitatorUrls: process.env.X402_FACILITATOR_URL_BASE_TESTNET
-      ? [process.env.X402_FACILITATOR_URL_BASE_TESTNET]
-      : ["https://facilitator.mogami.tech"], // Mogami works on testnet too
+    facilitatorUrls: parseFacilitatorUrls(process.env.X402_FACILITATOR_URLS_BASE_TESTNET) || ["https://facilitator.mogami.tech"],
     enabled: process.env.X402_BASE_TESTNET_ENABLED === "true",
     minConfirmations: 1,
   },
