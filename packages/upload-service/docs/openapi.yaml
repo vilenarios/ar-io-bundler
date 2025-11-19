@@ -50,16 +50,18 @@ components:
       name: token
       in: path
       description: |
-        x402 payment token in format {currency}-{network}.
+        x402 payment token in format {currency}-{network} OR {network}-{currency} (both supported).
 
-        **Supported Tokens:**
-        - usdc-base: USDC on Base mainnet
-        - usdc-base-mainnet: Alternative name for Base mainnet
+        **Supported Tokens (Enabled by Default):**
+        - usdc-base OR base-usdc: USDC on Base mainnet
+        - usdc-base-mainnet OR base-mainnet-usdc: Alternative name for Base mainnet
 
         **Available (requires env config):**
-        - usdc-base-sepolia: USDC on Base Sepolia testnet (requires X402_BASE_TESTNET_ENABLED=true)
-        - usdc-ethereum-mainnet: USDC on Ethereum mainnet (requires X402_ETH_ENABLED=true)
-        - usdc-polygon-mainnet: USDC on Polygon mainnet (requires X402_POLYGON_ENABLED=true)
+        - usdc-base-sepolia OR base-sepolia-usdc: USDC on Base Sepolia testnet (requires X402_BASE_TESTNET_ENABLED=true)
+        - usdc-ethereum-mainnet OR ethereum-mainnet-usdc: USDC on Ethereum mainnet (requires X402_ETH_ENABLED=true)
+        - usdc-polygon-mainnet OR polygon-mainnet-usdc: USDC on Polygon mainnet (requires X402_POLYGON_ENABLED=true)
+
+        **Note:** Both token formats are supported for convenience. Use whichever feels more natural.
 
         **Future:** sol-mainnet, ar-mainnet, etc.
       required: true
@@ -67,10 +69,15 @@ components:
         type: string
         enum:
           - usdc-base
+          - base-usdc
           - usdc-base-mainnet
+          - base-mainnet-usdc
           - usdc-base-sepolia
+          - base-sepolia-usdc
           - usdc-ethereum-mainnet
+          - ethereum-mainnet-usdc
           - usdc-polygon-mainnet
+          - polygon-mainnet-usdc
         example: usdc-base
     id:
       name: id
@@ -1377,7 +1384,7 @@ paths:
               schema:
                 type: string
                 default: "Insufficient balance"
-  /x402/data-item/signed:
+  /x402/upload/signed:
     servers:
       - url: /v1
       - url: /
@@ -1609,6 +1616,208 @@ paths:
               schema:
                 type: string
               example: "Internal server error"
+  /x402/upload/unsigned:
+    servers:
+      - url: /v1
+      - url: /
+    post:
+      summary: Posts raw data with x402 payment (bundler creates ANS-104 wrapper)
+      description: |
+        **x402-Specific Upload Endpoint for Raw Data**
+
+        This endpoint accepts raw data (images, files, etc.) and the bundler creates and signs
+        the ANS-104 data item wrapper. It processes x402 USDC payments.
+
+        **Use Case:** Simple clients (AI agents, apps) that don't want to create ANS-104 data items.
+
+        **Payment Flow:**
+        1. Client uploads raw data without X-PAYMENT header → Server returns 402 Payment Required
+        2. Server response includes x402 payment requirements (USDC amount includes ANS-104 overhead)
+        3. Client creates EIP-3009 authorization and signs with EIP-712
+        4. Client retries upload with X-PAYMENT header (base64-encoded JSON)
+        5. Server verifies payment, creates ANS-104 wrapper, signs with bundler key
+        6. Server returns receipt with x402Payment object and 7 system tags
+
+        **System Tags Automatically Added:**
+        - Bundler: AR.IO Bundler name
+        - Upload-Type: "raw-data-x402"
+        - Payer-Address: Ethereum address that paid
+        - X402-TX-Hash: Blockchain transaction hash
+        - X402-Payment-ID: UUID for tracking
+        - X402-Network: Payment network (e.g., "base")
+        - Upload-Timestamp: Unix timestamp
+        - Content-Type: MIME type (if provided)
+
+        **Custom Tags:**
+        Use X-TAG-* headers to add custom tags (e.g., X-TAG-App-Name: MyApp)
+
+        **Requirements:**
+        - Content-Length: Required (for fraud detection)
+        - Content-Type: Optional (e.g., image/png) - adds Content-Type tag
+        - X-PAYMENT: Required for x402 payment authorization (after 402 response)
+        - X-TAG-*: Optional custom tags (max 100 tags)
+
+        **Supported Networks:**
+        - base (Base mainnet) - Default, enabled
+        - base-sepolia (Base Sepolia testnet) - Requires X402_BASE_TESTNET_ENABLED=true
+        - ethereum-mainnet - Requires X402_ETH_ENABLED=true
+        - polygon-mainnet - Requires X402_POLYGON_ENABLED=true
+      tags:
+        - Upload
+      parameters:
+        - $ref: "#/components/parameters/content-length"
+        - name: Content-Type
+          in: header
+          description: MIME type of the raw data (e.g., image/png, application/pdf)
+          required: false
+          schema:
+            type: string
+            example: image/png
+        - $ref: "#/components/parameters/x-payment"
+        - name: X-TAG-*
+          in: header
+          description: |
+            Custom tags in the format X-TAG-Name: Value.
+            Multiple tags can be specified. Tag names are case-insensitive.
+          required: false
+          schema:
+            type: string
+          examples:
+            AppName:
+              summary: Application name tag
+              value: MyApp
+            Version:
+              summary: Version tag
+              value: "1.0.0"
+      requestBody:
+        required: true
+        description: Raw binary data (image, file, etc.)
+        content:
+          image/png:
+            schema:
+              type: string
+              format: binary
+          application/pdf:
+            schema:
+              type: string
+              format: binary
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: The receipt of the uploaded data item (bundler-signed)
+          headers:
+            X-Payment-Response:
+              schema:
+                type: string
+                format: byte
+              description: |
+                Base64-encoded x402 payment response containing:
+                - paymentId: UUID for tracking
+                - transactionHash: Blockchain transaction hash
+                - network: Payment network (e.g., "base")
+                - mode: Payment mode (always "payg" for x402)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataItemPost"
+              examples:
+                RawDataUpload:
+                  summary: Raw data upload with x402 payment
+                  value:
+                    id: "rNephs2z5BAAUlmZm_TGwQjz4TiMr6HoZNyBO3eLctA"
+                    timestamp: 1700590909589
+                    version: "1.0.0"
+                    owner: "jHGQATyLh_yBNKwqPmU-y6qV98q-AB48fIWUiFOSJAA"
+                    deadlineHeight: 1310000
+                    dataCaches: ["arweave.net"]
+                    fastFinalityIndexes: ["arweave.net"]
+                    x402Payment:
+                      paymentId: "edd4766e-a053-47f2-88d1-819e72c534dd"
+                      txHash: "0x9c31110e240805d9dfa5853c661f23a258c89f78b8d2e4424a922f9dfd8748f3"
+                      network: "base"
+                      mode: "payg"
+        "402":
+          description: Payment Required - x402 USDC payment needed
+          headers:
+            X-Payment-Required:
+              schema:
+                type: string
+                enum:
+                  - x402-1
+              description: x402 protocol version
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  x402Version:
+                    type: integer
+                    example: 1
+                  accepts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        scheme:
+                          type: string
+                          example: exact
+                        network:
+                          type: string
+                          example: base
+                        maxAmountRequired:
+                          type: string
+                          description: USDC amount in smallest unit (6 decimals)
+                          example: "3508"
+                        resource:
+                          type: string
+                          example: "https://upload.yourdomain.com/v1/x402/upload/unsigned"
+                        description:
+                          type: string
+                          example: "Upload data to Arweave via AR.IO Bundler"
+                        mimeType:
+                          type: string
+                          example: "application/json"
+                        payTo:
+                          type: string
+                          example: "0xCFd3f996447a541Cbfba5422310EDb417d9f2cE6"
+                        maxTimeoutSeconds:
+                          type: integer
+                          example: 3600
+                        asset:
+                          type: string
+                          description: USDC contract address
+                          example: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+        "403":
+          description: Raw data uploads are not enabled on this bundler
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Raw data uploads are not enabled on this bundler"
+        "400":
+          description: Invalid request
+          content:
+            text/plain:
+              schema:
+                type: string
+              examples:
+                InvalidContentLength:
+                  value: Invalid data. Data size exceeds maximum allowed size of 10737418240 bytes (10 GB)
+                TooManyTags:
+                  value: Tag count exceeds maximum of 100
+                MissingContentLength:
+                  summary: Content-Length required for x402 payments
+                  value: Missing Content Length. Content Length is required for x402 upload.
+        "503":
+          description: Service unavailable (payment service unreachable)
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Upload Service is Unavailable. Payment Service is unreachable"
   /tx/:id/status:
     servers:
       - url: /v1
