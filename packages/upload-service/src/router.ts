@@ -21,6 +21,7 @@ import * as promClient from "prom-client";
 import { MetricRegistry } from "./metricRegistry";
 import { dataItemRoute } from "./routes/dataItemPost";
 import { rootResponse } from "./routes/info";
+import { rawDataUploadRoute } from "./routes/rawDataPost";
 import {
   createMultiPartUpload,
   finalizeMultipartUploadWithHttpRequest,
@@ -49,8 +50,9 @@ const serveRoutesAndV1 = (path: string[]) =>
 // Raw data post routes
 router.post(serveRoutesAndV1(["/tx", "/tx/:token"]), dataItemRoute);
 
-// x402 signed data item route (same behavior as /tx)
-router.post(serveRoutesAndV1(["/x402/data-item/signed"]), dataItemRoute);
+// x402 upload routes
+router.post(serveRoutesAndV1(["/x402/upload/signed"]), dataItemRoute);
+router.post(serveRoutesAndV1(["/x402/upload/unsigned"]), rawDataUploadRoute);
 
 // x402 Pricing Routes
 router.get(

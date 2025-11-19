@@ -49,12 +49,39 @@ process.on("uncaughtException", (error) => {
   globalLogger.error("Uncaught exception:", error);
 });
 
+/**
+ * Validate required x402 environment variables
+ */
+function validateX402Config(): void {
+  const x402PaymentAddress =
+    process.env.X402_PAYMENT_ADDRESS ||
+    process.env.ETHEREUM_ADDRESS ||
+    process.env.BASE_ETH_ADDRESS;
+
+  if (!x402PaymentAddress) {
+    const errorMsg =
+      "FATAL: x402 payment address not configured. Set X402_PAYMENT_ADDRESS (or legacy ETHEREUM_ADDRESS/BASE_ETH_ADDRESS) in .env file.";
+    globalLogger.error(errorMsg);
+    throw new Error(errorMsg);
+  }
+
+  globalLogger.info("x402 configuration validated", {
+    x402PaymentAddress,
+    uploadServicePublicUrl:
+      process.env.UPLOAD_SERVICE_PUBLIC_URL || "http://localhost:3001",
+    x402FeePercent: process.env.X402_FEE_PERCENT || "15",
+  });
+}
+
 export async function createServer(
   arch: Partial<Architecture>,
   port: number = defaultPort
 ) {
   // load ssm parameters
   await loadConfig();
+
+  // Validate x402 configuration
+  validateX402Config();
 
   const app = new Koa();
   const uploadDatabase = arch.database ?? defaultArchitecture.database;

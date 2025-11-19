@@ -36,8 +36,27 @@ const rawDataUploadsEnabled = process.env.RAW_DATA_UPLOADS_ENABLED === "true";
 const opticalBridgingEnabled = process.env.OPTICAL_BRIDGING_ENABLED !== "false";
 
 /**
+ * Koa route handler wrapper for raw data uploads
+ * Buffers the request body and passes to handleRawDataUpload
+ *
+ * Used by: POST /x402/upload/unsigned
+ */
+export async function rawDataUploadRoute(ctx: KoaContext): Promise<void> {
+  // Buffer the entire request body
+  const chunks: Buffer[] = [];
+  for await (const chunk of ctx.req) {
+    chunks.push(chunk);
+  }
+  const rawBody = Buffer.concat(chunks);
+
+  return handleRawDataUpload(ctx, rawBody);
+}
+
+/**
  * Handle raw data upload with x402 payment
  * This is a simpler flow for AI agents that don't want to create ANS-104 data items
+ *
+ * Used by: POST /x402/upload/unsigned, and internally by dataItemRoute for auto-detected raw data
  */
 export async function handleRawDataUpload(ctx: KoaContext, rawBody: Buffer): Promise<void> {
   const { logger } = ctx.state;

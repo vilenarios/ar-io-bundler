@@ -88,13 +88,13 @@ export async function x402DataItemPricing(
       winstonCost
     );
 
-    // Apply configured x402 pricing buffer (your fee/profit margin)
-    const x402BufferPercent = parseInt(
-      process.env.X402_PRICING_BUFFER_PERCENT || "15",
+    // Apply configured x402 fee (your profit margin)
+    const x402FeePercent = parseInt(
+      process.env.X402_FEE_PERCENT || "15",
       10
     );
     const usdcAmountRequired = Math.ceil(
-      Number(exactUsdcAmount) * (1 + x402BufferPercent / 100)
+      Number(exactUsdcAmount) * (1 + x402FeePercent / 100)
     ).toString();
 
     logger.info("Calculated x402 price quote for signed data item", {
@@ -104,14 +104,14 @@ export async function x402DataItemPricing(
       byteCount,
       winstonCost: winstonCost.toString(),
       exactUsdcAmount,
-      x402BufferPercent,
+      x402FeePercent,
       usdcAmountRequired,
     });
 
     // Build absolute URL for the resource (required by x402 facilitator)
     const uploadServicePublicUrl =
       process.env.UPLOAD_SERVICE_PUBLIC_URL || "http://localhost:3001";
-    const resourceUrl = `${uploadServicePublicUrl}/v1/tx`;
+    const resourceUrl = `${uploadServicePublicUrl}/v1/x402/upload/signed`;
 
     // USDC address from network config
     const usdcAddress = networkConfig.usdcAddress;
@@ -125,7 +125,10 @@ export async function x402DataItemPricing(
       description: `Upload ${byteCount} bytes (signed data item) to Arweave via AR.IO Bundler`,
       mimeType: "application/octet-stream",
       payTo:
-        process.env.ETHEREUM_ADDRESS || process.env.BASE_ETH_ADDRESS || "",
+        process.env.X402_PAYMENT_ADDRESS ||
+        process.env.ETHEREUM_ADDRESS ||
+        process.env.BASE_ETH_ADDRESS ||
+        "",
       maxTimeoutSeconds: 3600,
       asset: usdcAddress,
       extra: {
@@ -277,13 +280,13 @@ export async function x402RawDataPricing(
       winstonCost
     );
 
-    // Apply configured x402 pricing buffer (your fee/profit margin)
-    const x402BufferPercent = parseInt(
-      process.env.X402_PRICING_BUFFER_PERCENT || "15",
+    // Apply configured x402 fee (your profit margin)
+    const x402FeePercent = parseInt(
+      process.env.X402_FEE_PERCENT || "15",
       10
     );
     const usdcAmountRequired = Math.ceil(
-      Number(exactUsdcAmount) * (1 + x402BufferPercent / 100)
+      Number(exactUsdcAmount) * (1 + x402FeePercent / 100)
     ).toString();
 
     logger.info("Calculated x402 price quote for raw data", {
@@ -297,14 +300,14 @@ export async function x402RawDataPricing(
       estimatedDataItemSize,
       winstonCost: winstonCost.toString(),
       exactUsdcAmount,
-      x402BufferPercent,
+      x402FeePercent,
       usdcAmountRequired,
     });
 
     // Build absolute URL for the resource (required by x402 facilitator)
     const uploadServicePublicUrl =
       process.env.UPLOAD_SERVICE_PUBLIC_URL || "http://localhost:3001";
-    const resourceUrl = `${uploadServicePublicUrl}/v1/tx`;
+    const resourceUrl = `${uploadServicePublicUrl}/v1/x402/upload/unsigned`;
 
     // USDC address from network config
     const usdcAddress = networkConfig.usdcAddress;
@@ -318,7 +321,10 @@ export async function x402RawDataPricing(
       description: `Upload ${estimatedDataItemSize} bytes (raw data + ANS-104 overhead) to Arweave via AR.IO Bundler`,
       mimeType: (contentType as string) || "application/octet-stream",
       payTo:
-        process.env.ETHEREUM_ADDRESS || process.env.BASE_ETH_ADDRESS || "",
+        process.env.X402_PAYMENT_ADDRESS ||
+        process.env.ETHEREUM_ADDRESS ||
+        process.env.BASE_ETH_ADDRESS ||
+        "",
       maxTimeoutSeconds: 3600,
       asset: usdcAddress,
       extra: {
