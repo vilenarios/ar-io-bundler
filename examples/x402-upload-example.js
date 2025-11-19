@@ -210,17 +210,19 @@ async function createX402Payment(priceQuote) {
 }
 
 /**
- * Step 3: Upload file with x402 payment
+ * Step 3: Upload file with x402 payment (raw/unsigned mode)
+ * Uses /v1/x402/upload/unsigned endpoint
  */
 async function uploadWithX402(filePath, paymentHeader) {
   const fileBuffer = fs.readFileSync(filePath);
   const fileSize = fileBuffer.length;
 
   console.log(`📤 Uploading file (${fileSize} bytes) with x402 payment...`);
+  console.log(`   Mode: RAW (server signs data item)`);
 
   try {
     const response = await axios.post(
-      `${CONFIG.uploadServiceUrl}/v1/tx`,
+      `${CONFIG.uploadServiceUrl}/v1/x402/upload/unsigned`,
       fileBuffer,
       {
         headers: {
@@ -246,6 +248,7 @@ async function uploadWithX402(filePath, paymentHeader) {
 /**
  * Upload with Ethereum-signed data item (matches x402-upload.html signed mode)
  * Uses ANS-104 with signatureType 3 (Ethereum)
+ * Uses /v1/x402/upload/signed endpoint
  */
 async function uploadSignedDataItemWithX402(filePath, wallet, paymentHeader) {
   const { createData, EthereumSigner } = require('arbundles');
@@ -274,10 +277,11 @@ async function uploadSignedDataItemWithX402(filePath, wallet, paymentHeader) {
   console.log(`   Signature Type: 3 (Ethereum)`);
 
   console.log(`📤 Uploading signed data item with x402 payment...`);
+  console.log(`   Mode: SIGNED (client signs data item)`);
 
   try {
     const response = await axios.post(
-      `${CONFIG.uploadServiceUrl}/v1/tx`,
+      `${CONFIG.uploadServiceUrl}/v1/x402/upload/signed`,
       signedDataItem,
       {
         headers: {

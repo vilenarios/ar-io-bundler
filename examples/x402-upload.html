@@ -732,9 +732,13 @@
           log(`✅ Data item signed! ID: ${await dataItem.id}`, 'success');
         }
 
-        // Try upload first
-        log('Attempting upload...', 'info');
-        let uploadResponse = await fetch(`${uploadUrl}/v1/tx`, {
+        // Try upload first (use mode-specific x402 endpoints)
+        const uploadEndpoint = currentMode === 'raw'
+          ? `${uploadUrl}/v1/x402/upload/unsigned`
+          : `${uploadUrl}/v1/x402/upload/signed`;
+
+        log(`Attempting upload to ${currentMode === 'raw' ? 'unsigned' : 'signed'} endpoint...`, 'info');
+        let uploadResponse = await fetch(uploadEndpoint, {
           method: 'POST',
           headers: {
             'Content-Type': contentType,
@@ -826,7 +830,7 @@
 
           // Retry upload with payment
           log('Retrying upload with payment...', 'info');
-          uploadResponse = await fetch(`${uploadUrl}/v1/tx`, {
+          uploadResponse = await fetch(uploadEndpoint, {
             method: 'POST',
             headers: {
               'Content-Type': contentType,

@@ -959,9 +959,14 @@
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), uploadTimeout);
 
+        // Use mode-specific x402 endpoints
+        const uploadEndpoint = currentMode === 'raw'
+          ? `${uploadUrl}/v1/x402/upload/unsigned`
+          : `${uploadUrl}/v1/x402/upload/signed`;
+
         let uploadResponse;
         try {
-          uploadResponse = await fetch(`${uploadUrl}/v1/tx`, {
+          uploadResponse = await fetch(uploadEndpoint, {
             method: 'POST',
             headers: {
               'Content-Type': contentType,
@@ -1062,7 +1067,7 @@
           const retryTimeoutId = setTimeout(() => retryController.abort(), uploadTimeout);
 
           try {
-            uploadResponse = await fetch(`${uploadUrl}/v1/tx`, {
+            uploadResponse = await fetch(uploadEndpoint, {
               method: 'POST',
               headers: {
                 'Content-Type': contentType,
