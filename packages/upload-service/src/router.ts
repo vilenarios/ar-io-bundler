@@ -31,6 +31,10 @@ import {
 import { offsetsHandler } from "./routes/offsets";
 import { statusHandler } from "./routes/status";
 import { swaggerDocs, swaggerDocsJSON } from "./routes/swagger";
+import {
+  x402DataItemPricing,
+  x402RawDataPricing,
+} from "./routes/x402Pricing";
 import { KoaContext } from "./server";
 
 const metricsRegistry = MetricRegistry.getInstance().getRegistry();
@@ -47,6 +51,16 @@ router.post(serveRoutesAndV1(["/tx", "/tx/:token"]), dataItemRoute);
 
 // x402 signed data item route (same behavior as /tx)
 router.post(serveRoutesAndV1(["/x402/data-item/signed"]), dataItemRoute);
+
+// x402 Pricing Routes
+router.get(
+  serveRoutesAndV1(["/price/x402/data-item/:token/:byteCount"]),
+  x402DataItemPricing
+);
+router.get(
+  serveRoutesAndV1(["/price/x402/data/:token/:byteCount"]),
+  x402RawDataPricing
+);
 
 /**
  * START TEMPORARY PATCH TO SUPPORT up.arweave.net
