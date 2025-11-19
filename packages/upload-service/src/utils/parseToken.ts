@@ -19,10 +19,10 @@ import { X402NetworkConfig, x402Networks } from "../arch/x402Service";
 /**
  * Parse a token string into currency, network, and network config
  *
- * Token format: {currency}-{network}
- * Examples: "usdc-base", "usdc-base-sepolia", "sol-mainnet" (future)
+ * Token format: {currency}-{network} OR {network}-{currency} (both supported)
+ * Examples: "usdc-base", "base-usdc", "usdc-base-sepolia", "base-sepolia-usdc"
  *
- * @param token - Token string to parse (e.g., "usdc-base")
+ * @param token - Token string to parse (e.g., "usdc-base" or "base-usdc")
  * @returns Parsed token info or null if invalid
  */
 export function parseToken(token: string): {
@@ -35,36 +35,51 @@ export function parseToken(token: string): {
     return null;
   }
 
-  const [currency, ...networkParts] = token.split("-");
-  const network = networkParts.join("-");
+  // Try parsing as {currency}-{network} (e.g., "usdc-base")
+  const parts = token.split("-");
+  const firstPart = parts[0];
+  const remainingParts = parts.slice(1);
 
-  // Validate currency and network are non-empty
-  if (!currency || currency.trim().length === 0) {
-    return null;
+  // Try format 1: {currency}-{network}
+  if (firstPart === "usdc") {
+    const network = remainingParts.join("-");
+    if (network && network.trim().length > 0) {
+      const networkConfig = x402Networks[network];
+      if (networkConfig && networkConfig.enabled) {
+        return { currency: "usdc", network, networkConfig };
+      }
+    }
   }
 
-  if (!network || network.trim().length === 0) {
-    return null;
+  // Try format 2: {network}-{currency} (e.g., "base-usdc")
+  const lastPart = parts[parts.length - 1];
+  if (lastPart === "usdc" && parts.length >= 2) {
+    const network = parts.slice(0, -1).join("-");
+    if (network && network.trim().length > 0) {
+      const networkConfig = x402Networks[network];
+      if (networkConfig && networkConfig.enabled) {
+        return { currency: "usdc", network, networkConfig };
+      }
+    }
   }
 
-  // Only support USDC on x402 networks for now
-  if (currency !== "usdc") {
-    return null; // Future: support "sol", "ar", etc.
-  }
-
-  const networkConfig = x402Networks[network];
-  if (!networkConfig || !networkConfig.enabled) {
-    return null;
-  }
-
-  return { currency, network, networkConfig };
+  return null;
 }
 
 /**
  * Get list of valid tokens for error messages
+ * Returns both {currency}-{network} and {network}-{currency} formats
  */
 export function getValidTokens(): string[] {
-  return Object.keys(x402Networks)
-    .filter((network) => x402Networks[network].enabled)
-    .map((network) => `usdc-${network}`); // Future: add other currencies
+  const enabledNetworks = Object.keys(x402Networks)
+    .filter((network) => x402Networks[network].enabled);
+
+  // Return both formats for better UX
+  const tokens: string[] = [];
+  enabledNetworks.forEach((network) => {
+    tokens.push(`usdc-${network}`);
+    tokens.push(`${network}-usdc`);
+  });
+
+  return tokens;
 }
