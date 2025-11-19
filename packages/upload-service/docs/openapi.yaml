@@ -750,7 +750,7 @@ paths:
         **Pricing Formula:**
         1. Get Winston cost from Arweave gateway for exact byte count
         2. Convert Winston to USDC using current AR/USD rate
-        3. Apply x402 buffer markup (default 15%, configurable via X402_PRICING_BUFFER_PERCENT)
+        3. Apply x402 fee markup (default 15%, configurable via X402_FEE_PERCENT)
 
         **Token Format:** {currency}-{network}
         - usdc-base: USDC on Base mainnet
@@ -793,7 +793,7 @@ paths:
                       scheme: "exact"
                       network: "base"
                       maxAmountRequired: "3642"
-                      resource: "https://upload.ardrive.io/v1/tx"
+                      resource: "https://upload.ardrive.io/v1/x402/upload/signed"
                       description: "Upload 2048 bytes (signed data item) to Arweave via AR.IO Bundler"
                       mimeType: "application/octet-stream"
                       payTo: "0xCFd3f996447a541Cbfba5422310EDb417d9f2cE6"
@@ -863,7 +863,7 @@ paths:
         2. Estimate final data item size: rawDataSize + signature + owner + headers + (totalTags × 64)
         3. Get Winston cost from Arweave gateway for estimated size
         4. Convert Winston to USDC using current AR/USD rate
-        5. Apply x402 buffer markup (default 15%)
+        5. Apply x402 fee markup (default 15%, configurable via X402_FEE_PERCENT)
 
         **Token Format:** {currency}-{network}
         - usdc-base: USDC on Base mainnet
@@ -926,7 +926,7 @@ paths:
                       scheme: "exact"
                       network: "base"
                       maxAmountRequired: "3642"
-                      resource: "https://upload.ardrive.io/v1/tx"
+                      resource: "https://upload.ardrive.io/v1/x402/upload/unsigned"
                       description: "Upload 2576 bytes (raw data + ANS-104 overhead) to Arweave via AR.IO Bundler"
                       mimeType: "application/octet-stream"
                       payTo: "0xCFd3f996447a541Cbfba5422310EDb417d9f2cE6"
@@ -954,7 +954,7 @@ paths:
                       scheme: "exact"
                       network: "base"
                       maxAmountRequired: "3642"
-                      resource: "https://upload.ardrive.io/v1/tx"
+                      resource: "https://upload.ardrive.io/v1/x402/upload/unsigned"
                       description: "Upload 2832 bytes (raw data + ANS-104 overhead) to Arweave via AR.IO Bundler"
                       mimeType: "image/png"
                       payTo: "0xCFd3f996447a541Cbfba5422310EDb417d9f2cE6"
@@ -1559,7 +1559,7 @@ paths:
                           example: "1000000"
                         resource:
                           type: string
-                          example: "/v1/x402/data-item/signed"
+                          example: "/v1/x402/upload/signed"
                         description:
                           type: string
                           example: "Upload 1024 bytes to Arweave via AR.IO Bundler"
@@ -1599,7 +1599,7 @@ paths:
                       - scheme: "exact"
                         network: "base"
                         maxAmountRequired: "1000000"
-                        resource: "/v1/x402/data-item/signed"
+                        resource: "/v1/x402/upload/signed"
                         description: "Upload 1024 bytes to Arweave via AR.IO Bundler"
                         mimeType: "application/json"
                         payTo: "0x6A0A10FFD285c971B841bee8892878c0d583Bf67"
