@@ -22,6 +22,12 @@ import { estimateDataItemSize } from "../utils/createDataItem";
 import { getValidTokens, parseToken } from "../utils/parseToken";
 import { x402PricingOracle } from "../utils/x402Pricing";
 
+// Arweave minimum chunk size for pricing calculation
+const ARWEAVE_MIN_CHUNK_BYTES = 262144; // 256 KB
+
+// Minimum x402 price (0.001 USDC in atomic units with 6 decimals)
+const MINIMUM_USDC_PRICE = 1000;
+
 /**
  * x402 Pricing for Signed Data Items
  *
@@ -79,9 +85,16 @@ export async function x402DataItemPricing(
       byteCount,
     });
 
-    // Get Winston cost from Arweave gateway (exact cost for the data item)
-    const winstonCost =
-      await arweaveGateway.getWinstonPriceForByteCount(byteCount);
+    // Get base Winston cost for Arweave minimum chunk size (256KB)
+    const baseWinstonCost = await arweaveGateway.getWinstonPriceForByteCount(
+      ARWEAVE_MIN_CHUNK_BYTES
+    );
+
+    // Calculate Winston cost for actual byte count (extrapolated from per-byte rate)
+    // Formula: (baseWinstonCost / ARWEAVE_MIN_CHUNK_BYTES) * byteCount
+    const winstonCost = baseWinstonCost
+      .dividedBy(ARWEAVE_MIN_CHUNK_BYTES)
+      .times(byteCount);
 
     // Convert Winston to USDC (exact conversion, no markup)
     const exactUsdcAmount = await x402PricingOracle.getUSDCForWinston(
@@ -93,19 +106,26 @@ export async function x402DataItemPricing(
       process.env.X402_FEE_PERCENT || "15",
       10
     );
-    const usdcAmountRequired = Math.ceil(
+    let usdcAmountRequired = Math.ceil(
       Number(exactUsdcAmount) * (1 + x402FeePercent / 100)
-    ).toString();
+    );
+
+    // Enforce minimum price of 0.001 USDC
+    usdcAmountRequired = Math.max(usdcAmountRequired, MINIMUM_USDC_PRICE);
+
+    const usdcAmountRequiredStr = usdcAmountRequired.toString();
 
     logger.info("Calculated x402 price quote for signed data item", {
       token,
       currency,
       network,
       byteCount,
+      baseWinstonCost: baseWinstonCost.toString(),
       winstonCost: winstonCost.toString(),
       exactUsdcAmount,
       x402FeePercent,
-      usdcAmountRequired,
+      usdcAmountRequired: usdcAmountRequiredStr,
+      minimumEnforced: usdcAmountRequired === MINIMUM_USDC_PRICE,
     });
 
     // Build absolute URL for the resource (required by x402 facilitator)
@@ -120,7 +140,7 @@ export async function x402DataItemPricing(
     const paymentRequirements = {
       scheme: "exact",
       network,
-      maxAmountRequired: usdcAmountRequired,
+      maxAmountRequired: usdcAmountRequiredStr,
       resource: resourceUrl,
       description: `Upload ${byteCount} bytes (signed data item) to Arweave via AR.IO Bundler`,
       mimeType: "application/json",
@@ -203,7 +223,7 @@ export async function x402DataItemPricing(
       network,
       byteCount,
       winstonCost: winstonCost.toString(),
-      usdcAmount: usdcAmountRequired,
+      usdcAmount: usdcAmountRequiredStr,
       x402Version: 1,
       payment: paymentRequirements,
     };
@@ -329,10 +349,16 @@ export async function x402RawDataPricing(
       overhead: estimatedDataItemSize - byteCount,
     });
 
-    // Get Winston cost from Arweave gateway (exact cost for estimated data item size)
-    const winstonCost = await arweaveGateway.getWinstonPriceForByteCount(
-      estimatedDataItemSize
+    // Get base Winston cost for Arweave minimum chunk size (256KB)
+    const baseWinstonCost = await arweaveGateway.getWinstonPriceForByteCount(
+      ARWEAVE_MIN_CHUNK_BYTES
     );
+
+    // Calculate Winston cost for estimated data item size (extrapolated from per-byte rate)
+    // Formula: (baseWinstonCost / ARWEAVE_MIN_CHUNK_BYTES) * estimatedDataItemSize
+    const winstonCost = baseWinstonCost
+      .dividedBy(ARWEAVE_MIN_CHUNK_BYTES)
+      .times(estimatedDataItemSize);
 
     // Convert Winston to USDC (exact conversion, no markup)
     const exactUsdcAmount = await x402PricingOracle.getUSDCForWinston(
@@ -344,9 +370,14 @@ export async function x402RawDataPricing(
       process.env.X402_FEE_PERCENT || "15",
       10
     );
-    const usdcAmountRequired = Math.ceil(
+    let usdcAmountRequired = Math.ceil(
       Number(exactUsdcAmount) * (1 + x402FeePercent / 100)
-    ).toString();
+    );
+
+    // Enforce minimum price of 0.001 USDC
+    usdcAmountRequired = Math.max(usdcAmountRequired, MINIMUM_USDC_PRICE);
+
+    const usdcAmountRequiredStr = usdcAmountRequired.toString();
 
     logger.info("Calculated x402 price quote for raw data", {
       token,
@@ -357,10 +388,12 @@ export async function x402RawDataPricing(
       systemTagCount,
       totalTagCount,
       estimatedDataItemSize,
+      baseWinstonCost: baseWinstonCost.toString(),
       winstonCost: winstonCost.toString(),
       exactUsdcAmount,
       x402FeePercent,
-      usdcAmountRequired,
+      usdcAmountRequired: usdcAmountRequiredStr,
+      minimumEnforced: usdcAmountRequired === MINIMUM_USDC_PRICE,
     });
 
     // Build absolute URL for the resource (required by x402 facilitator)
@@ -375,7 +408,7 @@ export async function x402RawDataPricing(
     const paymentRequirements = {
       scheme: "exact",
       network,
-      maxAmountRequired: usdcAmountRequired,
+      maxAmountRequired: usdcAmountRequiredStr,
       resource: resourceUrl,
       description: `Upload ${estimatedDataItemSize} bytes (raw data + ANS-104 overhead) to Arweave via AR.IO Bundler`,
       mimeType: "application/json",
@@ -467,7 +500,7 @@ export async function x402RawDataPricing(
       estimatedDataItemSize,
       overhead: estimatedDataItemSize - byteCount,
       winstonCost: winstonCost.toString(),
-      usdcAmount: usdcAmountRequired,
+      usdcAmount: usdcAmountRequiredStr,
       x402Version: 1,
       payment: paymentRequirements,
     };
