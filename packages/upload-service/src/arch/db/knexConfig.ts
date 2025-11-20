@@ -34,7 +34,7 @@ function getDbConnection(host: string) {
   const dbUser = process.env.DB_USER || "postgres";
   const dbPassword = process.env.DB_PASSWORD || "postgres";
   const dbPort = +(process.env.DB_PORT || 5432);
-  const dbDatabase = process.env.DB_DATABASE || "postgres";
+  const dbDatabase = process.env.UPLOAD_DB_DATABASE || "upload_service";
 
   logger.debug("Getting DB Connection", {
     host,

@@ -15,14 +15,15 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 import { config } from "dotenv";
+import * as path from "path";
 
 import logger from "../logger";
 
 export async function loadSecretsToEnv() {
   try {
-    // Load environment variables from .env file
-    config();
-    logger.info("Configuration loaded from .env file");
+    // Load environment variables from repository root .env file
+    config({ path: path.join(__dirname, "../../../../.env") });
+    logger.info("Configuration loaded from root .env file");
   } catch (error) {
     logger.error("Error loading .env file", error);
     throw error;

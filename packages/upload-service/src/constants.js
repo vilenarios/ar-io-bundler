@@ -43,7 +43,7 @@ exports.DataItemOffsets = exports.sigNameToSigInfo = exports.signatureTypeInfo =
  */
 const fs = __importStar(require("fs"));
 const types_1 = require("./types/types");
-exports.port = process.env.PORT ? +process.env.PORT : 3000;
+exports.port = process.env.UPLOAD_SERVICE_PORT ? +process.env.UPLOAD_SERVICE_PORT : 3001;
 exports.receiptVersion = "0.2.0";
 exports.deadlineHeightIncrement = 200;
 // Wallets added via environment var as a comma separated list // cspell:disable

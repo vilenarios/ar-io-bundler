@@ -18,7 +18,7 @@ import * as fs from "fs";
 
 import { PublicArweaveAddress, SigInfo, SignatureConfig } from "./types/types";
 
-export const port = process.env.PORT ? +process.env.PORT : 3000;
+export const port = process.env.UPLOAD_SERVICE_PORT ? +process.env.UPLOAD_SERVICE_PORT : 3001;
 
 export const receiptVersion = "0.2.0";
 

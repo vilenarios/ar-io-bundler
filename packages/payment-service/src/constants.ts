@@ -21,7 +21,7 @@ export const isTestEnv = process.env.NODE_ENV === "test";
 export const isDevEnv = process.env.NODE_ENV === "dev";
 
 export const migrateOnStartup = process.env.MIGRATE_ON_STARTUP === "true";
-export const defaultPort = +(process.env.PORT ?? 3000);
+export const defaultPort = +(process.env.PAYMENT_SERVICE_PORT ?? 4001);
 export const msPerMinute = 1000 * 60;
 export const oneHourInSeconds = 3600;
 export const oneMinuteInSeconds = 60;

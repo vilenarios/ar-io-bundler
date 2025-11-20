@@ -61,11 +61,10 @@ import {
   ObjectStoreOptions,
 } from "./objectStore";
 
-// Support both old AWS_* and new S3_* variable names for backward compatibility
-const s3AccessKeyId = process.env.S3_ACCESS_KEY_ID ?? process.env.AWS_ACCESS_KEY_ID;
-const s3SecretAccessKey = process.env.S3_SECRET_ACCESS_KEY ?? process.env.AWS_SECRET_ACCESS_KEY;
-const s3SessionToken = process.env.S3_SESSION_TOKEN ?? process.env.AWS_SESSION_TOKEN;
-const awsAccountId = process.env.AWS_ACCOUNT_ID; // Kept for metadata tagging
+// S3-compatible object storage credentials
+const s3AccessKeyId = process.env.S3_ACCESS_KEY_ID;
+const s3SecretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
+const s3SessionToken = process.env.S3_SESSION_TOKEN;
 
 const s3Credentials =
   s3AccessKeyId !== undefined && s3SecretAccessKey !== undefined
@@ -100,11 +99,11 @@ export const handleS3MultipartUploadError = (
         throw error;
     }
   } else {
-    // fallback to message parsing if AWS SDK does not provide an error code
+    // fallback to message parsing if S3 SDK does not provide an error code
     switch (true) {
       case message.includes("The specified upload does not exist"):
         throw new MultiPartUploadNotFound(uploadId);
-      // TODO: other known AWS error messages that can happen outside of standard error codes
+      // TODO: other known S3 error messages that can happen outside of standard error codes
       default:
         throw error;
     }
@@ -113,7 +112,7 @@ export const handleS3MultipartUploadError = (
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 // Build a map of bucket regions to their respective clients based on env vars
-const endpoint = process.env.S3_ENDPOINT ?? process.env.AWS_ENDPOINT;
+const endpoint = process.env.S3_ENDPOINT;
 const forcePathStyle = process.env.S3_FORCE_PATH_STYLE;
 const maxRetryAttempts = +(process.env.S3_RETRY_MAX_ATTEMPTS ?? 5);
 const retryBaseDelayMs = +(process.env.S3_RETRY_BASE_DELAY_MS ?? 100);
@@ -157,7 +156,7 @@ const regionsToClients: Record<BucketRegion, S3Client> = {};
 );
 
 // Build a map of bucket names to their respective regions based on env vars
-const s3Region = process.env.S3_REGION ?? process.env.AWS_REGION ?? "us-east-1";
+const s3Region = process.env.S3_REGION ?? "us-east-1";
 type BucketName = string;
 const bucketNameToRegionMap: Record<BucketName, BucketRegion> = {};
 if (process.env.DATA_ITEM_BUCKET) {
@@ -203,7 +202,7 @@ export class S3ObjectStore implements ObjectStore {
   private bucketName: string;
   private backupBucketName: string | undefined;
   private logger: winston.Logger;
-  private multipartCopyObjectLimitBytes = 1024 * 1024 * 1024 * 5; // 5GiB limit for AWS S3 `CopyObject` operation
+  private multipartCopyObjectLimitBytes = 1024 * 1024 * 1024 * 5; // 5GiB limit for S3 `CopyObject` operation
   private multipartCopyParallelLimit = 10;
 
   constructor({
@@ -223,7 +222,7 @@ export class S3ObjectStore implements ObjectStore {
         regionsToClients[s3Client.config.region] = s3Client;
       } else {
         // We can't await on the call to fetch the region here so just... do our best :(
-        regionsToClients[process.env.AWS_REGION ?? "us-east-1"] = s3Client;
+        regionsToClients[s3Region] = s3Client;
       }
     }
     this.bucketName = bucketName;
@@ -320,12 +319,7 @@ export class S3ObjectStore implements ObjectStore {
 
   public async createMultipartUpload(Key: string): Promise<string> {
     try {
-      let Metadata;
-      if (awsAccountId) {
-        Metadata = {
-          uploader: awsAccountId,
-        };
-      }
+      const Metadata = undefined;
 
       // Step 1: Start the multipart upload and get the upload ID
       const newUploadCommand = new CreateMultipartUploadCommand({
@@ -405,7 +399,7 @@ export class S3ObjectStore implements ObjectStore {
       let parts: Part[] = [];
       let partNumberMarker: string | undefined = undefined;
 
-      // Bounded upper limit of loops. AWS only allows 10,000 Parts, 1000 per List Command
+      // Bounded upper limit of loops. S3 only allows 10,000 Parts, 1000 per List Command
       const maxLoops = 10;
 
       for (let i = 0; i < maxLoops; i++) {
@@ -564,9 +558,6 @@ export class S3ObjectStore implements ObjectStore {
       ] = `${payloadInfo.payloadDataStart}`;
       Metadata[payloadContentTypeS3MetaDataTag] =
         payloadInfo.payloadContentType;
-    }
-    if (awsAccountId) {
-      Metadata.uploader = awsAccountId;
     }
 
     return {
@@ -750,12 +741,7 @@ export class S3ObjectStore implements ObjectStore {
     destinationBucketName: string;
     destinationKey: string;
   }): Promise<CompleteMultipartUploadCommandOutput> {
-    let Metadata;
-    if (awsAccountId) {
-      Metadata = {
-        uploader: awsAccountId,
-      };
-    }
+    const Metadata = undefined;
 
     // Start the multipart upload to get the upload ID
     const createCommand = new CreateMultipartUploadCommand({

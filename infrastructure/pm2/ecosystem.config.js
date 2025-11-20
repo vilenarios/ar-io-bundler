@@ -20,7 +20,8 @@ module.exports = {
       env_file: "/home/vilenarios/ar-io-bundler/.env",
       env: {
         NODE_ENV: process.env.NODE_ENV || "development",
-        PORT: process.env.PAYMENT_SERVICE_PORT || 4001,
+        PAYMENT_SERVICE_PORT: process.env.PAYMENT_SERVICE_PORT || 4001,
+        PAYMENT_DB_DATABASE: "payment_service",
         REDIS_QUEUE_HOST: "localhost",
         REDIS_QUEUE_PORT: "6381",
         DB_HOST: "localhost",
@@ -52,7 +53,8 @@ module.exports = {
       env_file: "/home/vilenarios/ar-io-bundler/.env",
       env: {
         NODE_ENV: process.env.NODE_ENV || "development",
-        PORT: process.env.UPLOAD_SERVICE_PORT || 3001,
+        UPLOAD_SERVICE_PORT: process.env.UPLOAD_SERVICE_PORT || 3001,
+        UPLOAD_DB_DATABASE: "upload_service",
         ELASTICACHE_HOST: "localhost",
         ELASTICACHE_PORT: "6379",
         ELASTICACHE_NO_CLUSTERING: "true",
@@ -82,6 +84,7 @@ module.exports = {
       env_file: "/home/vilenarios/ar-io-bundler/.env",
       env: {
         NODE_ENV: process.env.NODE_ENV || "development",
+        UPLOAD_DB_DATABASE: "upload_service",
         ELASTICACHE_HOST: "localhost",
         ELASTICACHE_PORT: "6379",
         ELASTICACHE_NO_CLUSTERING: "true",

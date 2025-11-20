@@ -32,7 +32,7 @@ function getDbConnection(host: string) {
   const dbPort = +(process.env.DB_PORT || 5432);
   const dbUser = process.env.DB_USER || "postgres";
   const dbPassword = process.env.DB_PASSWORD || "postgres";
-  const dbName = process.env.DB_DATABASE || "postgres";
+  const dbName = process.env.PAYMENT_DB_DATABASE || "payment_service";
 
   return `postgres://${dbUser}:${dbPassword}@${host}:${dbPort}/${dbName}?sslmode=disable`;
 }

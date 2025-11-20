@@ -15,10 +15,11 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 import { config } from "dotenv";
+import * as path from "path";
 
 export async function loadConfig() {
-  // Load environment variables from .env file
-  config();
+  // Load environment variables from repository root .env file
+  config({ path: path.join(__dirname, "../../../../.env") });
 
   // AWS SSM/Secrets Manager integration removed
   // All configuration now loaded from environment variables

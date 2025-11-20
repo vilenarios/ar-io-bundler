@@ -86,18 +86,16 @@ if [ ! -f "$PROJECT_ROOT/wallet.json" ]; then
 fi
 echo -e "${GREEN}✓${NC} Wallet found"
 
-# Check for .env files
+# Check for root .env file
 echo ""
-echo "⚙️  Checking configuration files..."
-if [ ! -f "$PROJECT_ROOT/packages/payment-service/.env" ]; then
-  echo -e "${RED}✗${NC} payment-service/.env not found"
+echo "⚙️  Checking configuration file..."
+if [ ! -f "$PROJECT_ROOT/.env" ]; then
+  echo -e "${RED}✗${NC} Root .env file not found at $PROJECT_ROOT/.env"
+  echo "   Please copy .env.sample to .env and configure it:"
+  echo "   cp .env.sample .env"
   exit 1
 fi
-if [ ! -f "$PROJECT_ROOT/packages/upload-service/.env" ]; then
-  echo -e "${RED}✗${NC} upload-service/.env not found"
-  exit 1
-fi
-echo -e "${GREEN}✓${NC} Configuration files found"
+echo -e "${GREEN}✓${NC} Root .env file found"
 
 # Stop existing services if running
 echo ""
