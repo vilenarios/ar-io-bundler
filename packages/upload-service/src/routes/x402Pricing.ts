@@ -123,7 +123,66 @@ export async function x402DataItemPricing(
       maxAmountRequired: usdcAmountRequired,
       resource: resourceUrl,
       description: `Upload ${byteCount} bytes (signed data item) to Arweave via AR.IO Bundler`,
-      mimeType: "application/octet-stream",
+      mimeType: "application/json",
+      outputSchema: {
+        type: "object",
+        properties: {
+          id: {
+            type: "string",
+            description: "Data item ID",
+          },
+          timestamp: {
+            type: "number",
+            description: "Upload timestamp in milliseconds",
+          },
+          owner: {
+            type: "string",
+            description: "Normalized wallet address that signed the data item",
+          },
+          deadlineHeight: {
+            type: "number",
+            description: "Deadline block height for Arweave posting",
+          },
+          version: {
+            type: "string",
+            description: "Receipt version",
+          },
+          signature: {
+            type: "string",
+            description: "Receipt signature",
+          },
+          dataCaches: {
+            type: "array",
+            description: "Arweave data caches",
+          },
+          fastFinalityIndexes: {
+            type: "array",
+            description: "Fast finality indexes",
+          },
+          x402Payment: {
+            type: "object",
+            description: "x402 payment details",
+            properties: {
+              paymentId: {
+                type: "string",
+                description: "UUID for tracking",
+              },
+              transactionHash: {
+                type: "string",
+                description: "Blockchain transaction hash",
+              },
+              network: {
+                type: "string",
+                description: "Payment network (e.g., 'base')",
+              },
+              mode: {
+                type: "string",
+                description: "Payment mode (always 'payg' for x402)",
+              },
+            },
+          },
+        },
+      },
       payTo:
         process.env.X402_PAYMENT_ADDRESS ||
         process.env.ETHEREUM_ADDRESS ||
@@ -319,7 +378,70 @@ export async function x402RawDataPricing(
       maxAmountRequired: usdcAmountRequired,
       resource: resourceUrl,
       description: `Upload ${estimatedDataItemSize} bytes (raw data + ANS-104 overhead) to Arweave via AR.IO Bundler`,
-      mimeType: (contentType as string) || "application/octet-stream",
+      mimeType: "application/json",
+      outputSchema: {
+        type: "object",
+        properties: {
+          id: {
+            type: "string",
+            description: "Data item ID",
+          },
+          timestamp: {
+            type: "number",
+            description: "Upload timestamp in milliseconds",
+          },
+          owner: {
+            type: "string",
+            description: "Bundler's wallet address (server-signed data item)",
+          },
+          payer: {
+            type: "string",
+            description: "Ethereum address that paid for the upload",
+          },
+          deadlineHeight: {
+            type: "number",
+            description: "Deadline block height for Arweave posting",
+          },
+          version: {
+            type: "string",
+            description: "Receipt version",
+          },
+          signature: {
+            type: "string",
+            description: "Receipt signature",
+          },
+          dataCaches: {
+            type: "array",
+            description: "Arweave data caches",
+          },
+          fastFinalityIndexes: {
+            type: "array",
+            description: "Fast finality indexes",
+          },
+          x402Payment: {
+            type: "object",
+            description: "x402 payment details",
+            properties: {
+              paymentId: {
+                type: "string",
+                description: "UUID for tracking",
+              },
+              transactionHash: {
+                type: "string",
+                description: "Blockchain transaction hash",
+              },
+              network: {
+                type: "string",
+                description: "Payment network (e.g., 'base')",
+              },
+              mode: {
+                type: "string",
+                description: "Payment mode (always 'payg' for x402)",
+              },
+            },
+          },
+        },
+      },
       payTo:
         process.env.X402_PAYMENT_ADDRESS ||
         process.env.ETHEREUM_ADDRESS ||
