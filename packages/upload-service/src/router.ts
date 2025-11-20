@@ -51,7 +51,7 @@ const serveRoutesAndV1 = (path: string[]) =>
 router.post(serveRoutesAndV1(["/tx", "/tx/:token"]), dataItemRoute);
 
 // x402 upload routes
-router.post(serveRoutesAndV1(["/x402/upload/signed"]), dataItemRoute);
+router.post(serveRoutesAndV1(["/x402/upload/signed", "/x402/data-item/signed"]), dataItemRoute);
 router.post(serveRoutesAndV1(["/x402/upload/unsigned"]), rawDataUploadRoute);
 
 // x402 Pricing Routes
