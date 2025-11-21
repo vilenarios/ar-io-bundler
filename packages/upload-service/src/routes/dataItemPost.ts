@@ -237,6 +237,45 @@ export async function dataItemRoute(ctx: KoaContext, next: Next) {
     });
   }
 
+  // EARLY x402 PRICING CHECK: If no X-PAYMENT header and Content-Length is present,
+  // return 402 with pricing BEFORE parsing the data item.
+  // This allows clients to get pricing by POSTing dummy data without creating a valid signed data item.
+  if (!x402PaymentHeader && rawContentLength !== undefined && !shouldSkipBalanceCheck) {
+    logger.debug("No X-PAYMENT header - checking if 402 pricing response needed", {
+      contentLength: rawContentLength,
+    });
+
+    // Return generic 402 with pricing based on Content-Length only
+    // Default to Arweave signatureType (1) and placeholder address
+    // This matches ArDrive's behavior of returning pricing without validating data item structure
+    try {
+      const x402Requirements = await paymentService.getX402PriceQuote({
+        byteCount: rawContentLength,
+        nativeAddress: "unknown", // Placeholder - pricing doesn't depend on address
+        signatureType: 1, // Default to Arweave
+      });
+
+      if (x402Requirements) {
+        // x402-compliant 402 response
+        ctx.status = 402;
+        ctx.set("X-Payment-Required", "x402-1");
+        ctx.set("Content-Type", "application/json");
+        ctx.body = x402Requirements;
+
+        logger.info("Returned 402 Payment Required (content-length based pricing)", {
+          contentLength: rawContentLength,
+        });
+
+        return next();
+      }
+    } catch (error) {
+      logger.error("Failed to get x402 price quote for early 402 response", {
+        error,
+      });
+      // Fall through to normal processing
+    }
+  }
+
   // Duplicate the request body stream. The original will go to the data item
   // event emitter. This one will go to the object store.
   ctx.request.req.pause();
