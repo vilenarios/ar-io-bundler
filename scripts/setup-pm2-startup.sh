@@ -29,21 +29,34 @@ echo ""
 
 # Configure PM2 startup
 echo "⚙️  Configuring PM2 systemd service..."
-env PATH=$PATH:/home/vilenarios/.nvm/versions/node/v22.17.0/bin \
-    /home/vilenarios/.nvm/versions/node/v22.17.0/lib/node_modules/pm2/bin/pm2 startup systemd \
-    -u vilenarios --hp /home/vilenarios
+
+# Detect PM2 path dynamically
+PM2_PATH=$(su - "$ACTUAL_USER" -c "which pm2" 2>/dev/null || command -v pm2)
+
+if [ -z "$PM2_PATH" ]; then
+    echo "❌ PM2 not found in PATH"
+    echo "   Please install PM2: npm install -g pm2"
+    exit 1
+fi
+
+echo "   Using PM2: $PM2_PATH"
+
+# Run PM2 startup as the actual user
+su - "$ACTUAL_USER" -c "$PM2_PATH startup systemd -u $ACTUAL_USER --hp $ACTUAL_HOME"
 
 echo ""
 echo "✅ PM2 systemd service configured!"
 echo ""
 
 # Verify the service was created
-if systemctl list-unit-files | grep -q "pm2-vilenarios.service"; then
-    echo "✅ Systemd service created: pm2-vilenarios.service"
+SERVICE_NAME="pm2-${ACTUAL_USER}.service"
+
+if systemctl list-unit-files | grep -q "$SERVICE_NAME"; then
+    echo "✅ Systemd service created: $SERVICE_NAME"
 
     # Enable the service
     echo "⚙️  Enabling PM2 service..."
-    systemctl enable pm2-vilenarios.service
+    systemctl enable "$SERVICE_NAME"
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -53,12 +66,13 @@ if systemctl list-unit-files | grep -q "pm2-vilenarios.service"; then
     echo "Your PM2 services will now automatically start on system boot."
     echo ""
     echo "Service details:"
-    echo "  Service name: pm2-vilenarios.service"
+    echo "  Service name: $SERVICE_NAME"
+    echo "  User: $ACTUAL_USER"
     echo "  Status: Enabled"
     echo ""
     echo "Useful commands:"
-    echo "  sudo systemctl status pm2-vilenarios   # Check service status"
-    echo "  sudo systemctl restart pm2-vilenarios  # Restart PM2 services"
+    echo "  sudo systemctl status $SERVICE_NAME    # Check service status"
+    echo "  sudo systemctl restart $SERVICE_NAME   # Restart PM2 services"
     echo "  pm2 list                               # List running processes"
     echo "  pm2 save                               # Save current process list"
     echo ""
