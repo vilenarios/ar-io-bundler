@@ -210,6 +210,9 @@ export interface Database {
   ): Promise<void>;
 
   getX402PaymentsByPayer(payerAddress: string): Promise<X402Payment[]>;
+
+  /** Check if data item IDs already exist in the database (across all tables) */
+  getExistingDataItemIds(dataItemIds: TransactionId[]): Promise<Set<TransactionId>>;
 }
 
 export type UpdateDataItemsToPermanentParams = {

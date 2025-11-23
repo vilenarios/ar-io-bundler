@@ -366,6 +366,33 @@ export async function dataItemRoute(ctx: KoaContext, next: Next) {
   logger.debug(
     `Data item ${dataItemId} is not in-flight. Proceeding with upload...`
   );
+
+  // Check database for duplicate data items BEFORE payment processing
+  // This prevents users from being charged for uploading duplicates
+  try {
+    logger.debug("Checking database for existing data item...", { dataItemId });
+    const existingDataItemIds = await database.getExistingDataItemIds([dataItemId]);
+    if (existingDataItemIds.size > 0) {
+      const error = new DataItemExistsWarning(dataItemId);
+      logger.warn("Data item already exists in database!", {
+        dataItemId,
+        preventedDuplicateCharge: true,
+      });
+      MetricRegistry.duplicateDataItemsFoundFromDatabaseReader.inc();
+      ctx.status = 202;
+      ctx.res.statusMessage = error.message;
+      return next();
+    }
+    logger.debug("Data item does not exist in database. Proceeding...");
+  } catch (error) {
+    logger.error("Failed to check database for duplicate data item", {
+      dataItemId,
+      error,
+    });
+    // Fall through to allow upload if database check fails (availability over consistency)
+    // The in-flight check and eventual database insert will still catch most duplicates
+  }
+
   await markInFlight({ dataItemId, cacheService, logger });
 
   // Handle payment: x402 or traditional balance check

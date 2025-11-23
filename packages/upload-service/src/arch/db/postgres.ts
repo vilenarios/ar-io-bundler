@@ -161,7 +161,7 @@ export class PostgresDatabase implements Database {
     tableNames.failedDataItem,
   ] as const;
 
-  private async getExistingDataItemIds(
+  public async getExistingDataItemIds(
     dataItemIds: TransactionId[]
   ): Promise<Set<TransactionId>> {
     const [
