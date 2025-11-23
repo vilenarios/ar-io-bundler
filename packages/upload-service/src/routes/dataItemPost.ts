@@ -240,9 +240,12 @@ export async function dataItemRoute(ctx: KoaContext, next: Next) {
   // EARLY x402 PRICING CHECK: If no X-PAYMENT header and Content-Length is present,
   // return 402 with pricing BEFORE parsing the data item.
   // This allows clients to get pricing by POSTing dummy data without creating a valid signed data item.
-  if (!x402PaymentHeader && rawContentLength !== undefined && !shouldSkipBalanceCheck) {
-    logger.debug("No X-PAYMENT header - checking if 402 pricing response needed", {
+  // IMPORTANT: Only apply this check for x402-specific routes, NOT credit-based /tx/:token routes
+  const isX402Route = ctx.path.includes("/x402/");
+  if (isX402Route && !x402PaymentHeader && rawContentLength !== undefined && !shouldSkipBalanceCheck) {
+    logger.debug("x402 route with no X-PAYMENT header - returning 402 pricing", {
       contentLength: rawContentLength,
+      path: ctx.path,
     });
 
     // Return generic 402 with pricing based on Content-Length only
@@ -264,6 +267,7 @@ export async function dataItemRoute(ctx: KoaContext, next: Next) {
 
         logger.info("Returned 402 Payment Required (content-length based pricing)", {
           contentLength: rawContentLength,
+          path: ctx.path,
         });
 
         return next();
