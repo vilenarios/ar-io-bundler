@@ -21,6 +21,7 @@ import path from "path";
 import { EventEmitter } from "stream";
 import winston from "winston";
 
+import { ObjectStore } from "../arch/objectStore";
 import { columnNames, tableNames } from "../arch/db/dbConstants";
 import { getReaderConfig, getWriterConfig } from "../arch/db/knexConfig";
 import { jobLabels } from "../constants";
@@ -29,12 +30,18 @@ import { PermanentDataItemDBResult, Timestamp } from "../types/dbTypes";
 import { TransactionId } from "../types/types";
 import { Deferred } from "../utils/deferred";
 import { UPLOAD_DATA_PATH } from "../utils/fileSystemUtils";
+import { dataItemPrefix } from "../utils/objectStoreUtils";
 
 const QUERY_BATCH_SIZE = 500;
 const DELETE_CONCURRENCY_LIMIT = 8;
 const MAX_ERROR_COUNT = 10;
 const CURSOR_KEY = "fs-cleanup-last-deleted-cursor";
 const DEFAULT_START_DATE = "2025-03-17T00:00:00";
+
+// Configurable retention periods (in days)
+const FILESYSTEM_CLEANUP_DAYS = +(process.env.FILESYSTEM_CLEANUP_DAYS || 7);
+const MINIO_CLEANUP_DAYS = +(process.env.MINIO_CLEANUP_DAYS || 90);
+
 let heartbeatTimer: NodeJS.Timeout | null = null;
 type PermanentDataItem = Pick<
   PermanentDataItemDBResult,
@@ -92,14 +99,17 @@ async function getNextBatch(
 async function cleanupFsHandler({
   logger = defaultLogger.child({ job: jobLabels.cleanupFs }),
   knexClient,
+  objectStore,
   teardownComplete,
 }: {
   logger?: winston.Logger;
   knexClient: Knex;
+  objectStore: ObjectStore;
   teardownComplete: Deferred<void>;
 }) {
   const startTimestamp = new Date();
-  let deletedCount = 0;
+  let filesystemDeletedCount = 0;
+  let minioDeletedCount = 0;
   let errorCount = 0;
   let cursor = await getLastCursor();
   const HEARTBEAT_INTERVAL_MS = 15_000;
@@ -112,13 +122,26 @@ async function cleanupFsHandler({
   const fileLimit = pLimit(DELETE_CONCURRENCY_LIMIT);
   let fetchedBatchesCount = 0;
 
+  // Calculate cutoff times for tiered cleanup
+  const now = Date.now();
+  const filesystemCutoff = new Date(now - FILESYSTEM_CLEANUP_DAYS * 24 * 60 * 60 * 1000);
+  const minioCutoff = new Date(now - MINIO_CLEANUP_DAYS * 24 * 60 * 60 * 1000);
+
+  logger.info("Cleanup job started", {
+    filesystemCutoff: filesystemCutoff.toISOString(),
+    minioCutoff: minioCutoff.toISOString(),
+    filesystemRetentionDays: FILESYSTEM_CLEANUP_DAYS,
+    minioRetentionDays: MINIO_CLEANUP_DAYS,
+  });
+
   function logProgress() {
     const elapsedSecs = Math.max(
       parseFloat(((Date.now() - startTimestamp.getTime()) / 1000).toFixed(3)),
       0.001 // Prevent division by zero
     );
     logger.info("Progress:", {
-      deletedCount,
+      filesystemDeletedCount,
+      minioDeletedCount,
       errorCount,
       cursor,
       bufferedBatchesCount: batchQueue.length,
@@ -126,7 +149,8 @@ async function cleanupFsHandler({
       idsFetchedCount: fetchedBatchesCount * QUERY_BATCH_SIZE,
       elapsedSecs,
       fetchedBatchesPerSec: fetchedBatchesCount / elapsedSecs,
-      deletesPerSec: deletedCount / elapsedSecs,
+      filesystemDeletesPerSec: filesystemDeletedCount / elapsedSecs,
+      minioDeletesPerSec: minioDeletedCount / elapsedSecs,
     });
   }
 
@@ -160,7 +184,10 @@ async function cleanupFsHandler({
       return;
     }
     fetching = true;
-    const cutoffTime = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 hours ago
+
+    // Use filesystem cutoff as the primary cutoff (more aggressive cleanup)
+    const cutoffTime = filesystemCutoff;
+
     while (batchQueue.length < MAX_BATCHES) {
       let batch = await getNextBatch(knexClient, cursor, cutoffTime);
       logger.debug(`Unfiltered batch:`, {
@@ -238,41 +265,81 @@ async function cleanupFsHandler({
         uploadedAt: batch[batch.length - 1].uploaded_date,
         dataItemId: batch[batch.length - 1].data_item_id,
       };
+
       await Promise.all(
         batch.flatMap((row) => {
-          const baseDir = path.join(
-            UPLOAD_DATA_PATH,
-            row.data_item_id.slice(0, 2),
-            row.data_item_id.slice(2, 4)
-          );
+          const uploadDate = new Date(row.uploaded_date);
+          const shouldCleanFilesystem = uploadDate < filesystemCutoff;
+          const shouldCleanMinio = uploadDate < minioCutoff;
 
-          return ["raw_", "metadata_"].map((prefix) =>
-            fileLimit(async () => {
-              const filePath = path.join(
-                baseDir,
-                `${prefix}${row.data_item_id}`
-              );
-              try {
-                await fs.unlink(filePath);
-                deletedCount++;
-                logger.debug(`Deleted: ${filePath}`);
-              } catch (error: any) {
-                if (error.code === "ENOENT") {
-                  logger.warn(`Gone`, { path: filePath });
-                } else {
-                  logger.error(`Failed to delete!`, {
-                    path: filePath,
-                    error,
-                  });
-                  errorCount++;
-                  batchCursor = {
-                    uploadedAt: batch![0].uploaded_date,
-                    dataItemId: batch![0].data_item_id,
-                  };
+          const tasks = [];
+
+          // Filesystem cleanup (7 days default)
+          if (shouldCleanFilesystem) {
+            const baseDir = path.join(
+              UPLOAD_DATA_PATH,
+              row.data_item_id.slice(0, 2),
+              row.data_item_id.slice(2, 4)
+            );
+
+            tasks.push(...["raw_", "metadata_"].map((prefix) =>
+              fileLimit(async () => {
+                const filePath = path.join(
+                  baseDir,
+                  `${prefix}${row.data_item_id}`
+                );
+                try {
+                  await fs.unlink(filePath);
+                  filesystemDeletedCount++;
+                  logger.debug(`Deleted filesystem: ${filePath}`);
+                } catch (error: any) {
+                  if (error.code === "ENOENT") {
+                    logger.debug(`Filesystem file already gone`, { path: filePath });
+                  } else {
+                    logger.error(`Failed to delete filesystem file!`, {
+                      path: filePath,
+                      error,
+                    });
+                    errorCount++;
+                    batchCursor = {
+                      uploadedAt: batch![0].uploaded_date,
+                      dataItemId: batch![0].data_item_id,
+                    };
+                  }
                 }
-              }
-            })
-          );
+              })
+            ));
+          }
+
+          // MinIO cleanup (90 days default)
+          if (shouldCleanMinio) {
+            tasks.push(
+              fileLimit(async () => {
+                const s3Key = `${dataItemPrefix}/${row.data_item_id}`;
+                try {
+                  await objectStore.deleteObject(s3Key);
+                  minioDeletedCount++;
+                  logger.debug(`Deleted MinIO: ${s3Key}`);
+                } catch (error: any) {
+                  if (error.code === "NoSuchKey" || error.name === "NoSuchKey") {
+                    logger.debug(`MinIO object already gone`, { key: s3Key });
+                  } else {
+                    logger.error(`Failed to delete MinIO object!`, {
+                      key: s3Key,
+                      error,
+                    });
+                    errorCount++;
+                    batchCursor = {
+                      uploadedAt: batch![0].uploaded_date,
+                      dataItemId: batch![0].data_item_id,
+                    };
+                  }
+                }
+              })
+            );
+          }
+
+          return tasks;
         })
       );
 
@@ -290,9 +357,12 @@ async function cleanupFsHandler({
     if (isOutOfWorkToDo) {
       if (batchQueue.length === 0) {
         logger.info(`✅ Cleanup complete!`, {
-          deletedCount,
+          filesystemDeletedCount,
+          minioDeletedCount,
           errorCount,
           cursor,
+          filesystemRetentionDays: FILESYSTEM_CLEANUP_DAYS,
+          minioRetentionDays: MINIO_CLEANUP_DAYS,
         });
         teardown();
       } else {
@@ -326,12 +396,17 @@ export async function handler(eventPayload?: unknown) {
   const knexClient = knex(getReaderConfig());
   const teardownComplete = new Deferred<void>();
 
+  // Import architecture to get objectStore
+  const { getS3ObjectStore } = await import("../utils/objectStoreUtils");
+  const objectStore = getS3ObjectStore();
+
   defaultLogger.info(`Cleanup job triggered with event payload:`, eventPayload);
 
   try {
     await cleanupFsHandler({
       logger: defaultLogger.child({ job: jobLabels.cleanupFs }),
       knexClient,
+      objectStore,
       teardownComplete,
     });
     await teardownComplete.promise;
