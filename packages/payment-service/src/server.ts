@@ -207,9 +207,37 @@ export async function createServer(
 
   // Bind to 0.0.0.0 to accept connections from nginx proxy on separate server
   const server = app.listen(port, '0.0.0.0');
-  server.keepAliveTimeout = 120_000; // intentionally longer than the ALB timeout
-  server.requestTimeout = 120_000; // no requests should take longer than 2 minutes
+
+  // Timeout configuration for payment operations (faster than uploads)
+  const requestTimeout = parseInt(process.env.REQUEST_TIMEOUT_MS || "60000", 10); // 1 minute
+  const keepAliveTimeout = parseInt(process.env.KEEPALIVE_TIMEOUT_MS || "65000", 10); // 1m 5s
+  const headersTimeout = parseInt(process.env.HEADERS_TIMEOUT_MS || "70000", 10); // 1m 10s
+
+  server.timeout = requestTimeout;
+  server.keepAliveTimeout = keepAliveTimeout;
+  server.headersTimeout = headersTimeout;
+
+  // Handle timeout events
+  server.on('timeout', (socket) => {
+    logger.warn('Server timeout - closing socket', {
+      remoteAddress: socket.remoteAddress,
+      remotePort: socket.remotePort,
+    });
+    socket.destroy();
+  });
+
+  server.on('clientError', (err, socket) => {
+    logger.error('Client error', { error: err });
+    if (!socket.destroyed) {
+      socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+    }
+  });
 
   logger.info(`Listening on port ${port}...`);
+  logger.info("Server timeout configuration", {
+    requestTimeout,
+    keepAliveTimeout,
+    headersTimeout,
+  });
   return server;
 }

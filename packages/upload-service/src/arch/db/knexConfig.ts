@@ -28,6 +28,14 @@ const baseConfig = {
     tableName: "knex_migrations",
     directory: path.join(__dirname, "../../migrations"),
   },
+  pool: {
+    min: parseInt(process.env.DB_POOL_MIN || "5", 10),
+    max: parseInt(process.env.DB_POOL_MAX || "50", 10),
+    acquireTimeoutMillis: parseInt(process.env.DB_ACQUIRE_TIMEOUT || "10000", 10),
+    idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT || "30000", 10),
+    reapIntervalMillis: parseInt(process.env.DB_REAP_INTERVAL || "1000", 10),
+  },
+  acquireConnectionTimeout: parseInt(process.env.DB_ACQUIRE_TIMEOUT || "10000", 10),
 };
 
 function getDbConnection(host: string) {

@@ -44,12 +44,15 @@ const knex = require("knex")(getWriterConfig());
 const database = new PostgresDatabase();
 
 // Plan Bundle Worker - Runs continuously to plan new data items into bundles
+// Planning can run concurrently for different bundle sizes/types
+// Higher concurrency reduces queue backlog under high load
+// Memory usage: ~50MB per concurrent planning operation
 const planWorker = createWorker(
   jobLabels.planBundle,
   async () => {
     await planBundleHandler(database);
   },
-  { concurrency: 1 }
+  { concurrency: parseInt(process.env.PLAN_WORKER_CONCURRENCY || "5", 10) }
 );
 
 // Prepare Bundle Worker - Prepares bundles for posting
@@ -62,7 +65,7 @@ const prepareWorker = createWorker<{ planId: string }>(
       cacheService: defaultArchitecture.cacheService,
     });
   },
-  { concurrency: 3 }
+  { concurrency: parseInt(process.env.PREPARE_WORKER_CONCURRENCY || "3", 10) }
 );
 
 // Post Bundle Worker - Posts bundles to Arweave
@@ -75,7 +78,7 @@ const postWorker = createWorker<{ planId: string }>(
       arweaveGateway: defaultArchitecture.arweaveGateway,
     });
   },
-  { concurrency: 2 }
+  { concurrency: parseInt(process.env.POST_WORKER_CONCURRENCY || "2", 10) }
 );
 
 // Seed Bundle Worker - Seeds bundles to additional gateways
@@ -100,7 +103,7 @@ const verifyWorker = createWorker<{ planId: string }>(
       arweaveGateway: defaultArchitecture.arweaveGateway,
     });
   },
-  { concurrency: 3 }
+  { concurrency: parseInt(process.env.VERIFY_WORKER_CONCURRENCY || "3", 10) }
 );
 
 // Put Offsets Worker - Writes offsets to PostgreSQL

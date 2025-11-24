@@ -129,14 +129,40 @@ export async function createServer(
   app.use(router.routes());
   // Bind to 0.0.0.0 to accept connections from nginx proxy on separate server
   const server = app.listen(port, '0.0.0.0');
-  server.keepAliveTimeout = 120_000; // intentionally larger than ALB idle timeout
-  server.requestTimeout = 0; // disable request timeout
+
+  // Timeout configuration for large file uploads (up to 10 GiB)
+  const requestTimeout = parseInt(process.env.REQUEST_TIMEOUT_MS || "600000", 10); // 10 minutes
+  const keepAliveTimeout = parseInt(process.env.KEEPALIVE_TIMEOUT_MS || "620000", 10); // 10m 20s
+  const headersTimeout = parseInt(process.env.HEADERS_TIMEOUT_MS || "630000", 10); // 10m 30s
+
+  server.timeout = requestTimeout;
+  server.keepAliveTimeout = keepAliveTimeout;
+  server.headersTimeout = headersTimeout;
+
+  // Handle timeout events
+  server.on('timeout', (socket) => {
+    globalLogger.warn('Server timeout - closing socket', {
+      remoteAddress: socket.remoteAddress,
+      remotePort: socket.remotePort,
+    });
+    socket.destroy();
+  });
+
+  server.on('clientError', (err, socket) => {
+    globalLogger.error('Client error', { error: err });
+    if (!socket.destroyed) {
+      socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+    }
+  });
 
   globalLogger.info(`Listening on port ${port}...`);
   globalLogger.info(
     `Communicating with payment service at ${paymentService.paymentServiceURL}...`
   );
-  globalLogger.info(`Keep alive is: ${server.keepAliveTimeout}`);
-  globalLogger.info(`Request timeout is: ${server.requestTimeout}`);
+  globalLogger.info("Server timeout configuration", {
+    requestTimeout,
+    keepAliveTimeout,
+    headersTimeout,
+  });
   return server;
 }

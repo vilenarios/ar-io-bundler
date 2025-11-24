@@ -959,11 +959,29 @@ export async function streamsForDataItemStorage({
   fsBackupStream?: Readable;
   objStoreStream?: Readable;
 }> {
+  // CRITICAL: Prevent Redis OOM by enforcing max cache size
+  // Redis is in-memory and has limited capacity
+  // Large files (>100MB) should go to object store only
+  const maxCacheSize = parseInt(
+    process.env.MAX_CACHE_DATA_ITEM_SIZE || (100 * 1024 * 1024).toString(),
+    10
+  ); // 100 MB default
+
   // For sufficiently small data items, stream them to a cache service
   const isSmallDataItem =
     contentLength &&
     +contentLength <=
-      (await getConfigValue(ConfigKeys.cacheDataItemBytesThreshold));
+      Math.min(
+        maxCacheSize,
+        await getConfigValue(ConfigKeys.cacheDataItemBytesThreshold)
+      );
+
+  if (contentLength && +contentLength > maxCacheSize) {
+    logger.debug("Data item too large for cache - using object store only", {
+      contentLength,
+      maxCacheSize,
+    });
+  }
   const shouldSampleInSmallDataItem = shouldSampleIn(
     await getConfigValue(ConfigKeys.cacheWriteDataItemSamplingRate)
   );

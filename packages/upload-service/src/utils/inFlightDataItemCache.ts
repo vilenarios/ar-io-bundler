@@ -48,7 +48,9 @@ const elasticacheInFlightPrefix = "if_";
 function getElasticacheInFlightKey(dataItemId: TransactionId) {
   return `${elasticacheInFlightPrefix}{${dataItemId}}`;
 }
-const inFlightTtlSeconds = +(process.env.IN_FLIGHT_DATA_ITEM_TTL_SECS ?? 60); // Block attempted duplicates for 1 minute
+// TTL must exceed max upload time to prevent duplicates
+// 10 GiB @ 100 MB/s = 100s, using 600s (10 min) for safety margin
+const inFlightTtlSeconds = +(process.env.IN_FLIGHT_DATA_ITEM_TTL_SECS ?? 600);
 
 // In-memory cache for fallback scenarios
 const backupCache = EphemeralCache<TransactionId, boolean>(
