@@ -19,8 +19,21 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/ethers@6.10.0/dist/ethers.umd.min.js"></script>
-  <script src="https://unpkg.com/@dha-team/arbundles@1.0.4/build/web/bundle.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.15.0/dist/ethers.umd.min.js"></script>
+  <script src="https://unpkg.com/@dha-team/arbundles@1.0.3/build/web/bundle.js"></script>
+  <!-- Farcaster Mini App SDK for Base App integration -->
+  <script src="https://unpkg.com/@anthropic-ai/sdk@latest/dist/index.global.js" onerror="console.log('Farcaster SDK not loaded - will use MetaMask')"></script>
+  <script type="module">
+    // Try to load Farcaster Mini App SDK dynamically
+    try {
+      const { sdk } = await import('https://esm.sh/@farcaster/miniapp-sdk@0.0.13');
+      window.farcasterSdk = sdk;
+      console.log('Farcaster SDK loaded');
+    } catch (e) {
+      console.log('Farcaster SDK not available - using MetaMask mode');
+      window.farcasterSdk = null;
+    }
+  </script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -311,8 +324,8 @@
       background: var(--canvas);
       border: 1px solid var(--default);
       border-radius: 8px;
-      margin: 8px 0;
       font-size: 0.875rem;
+      flex-wrap: wrap;
     }
 
     .file-status-icon {
@@ -327,6 +340,7 @@
 
     .file-name {
       flex: 1;
+      min-width: 150px;
       color: var(--fg-muted);
       word-break: break-word;
     }
@@ -388,14 +402,14 @@
     .batch-results {
       margin: 24px 0;
       padding: 24px;
-      background: linear-gradient(to bottom right, rgba(49, 66, 196, 0.08), rgba(49, 66, 196, 0.04));
-      border: 1px solid rgba(49, 66, 196, 0.25);
-      border-left: 4px solid var(--turbo-blue);
+      background: linear-gradient(to bottom right, rgba(24, 169, 87, 0.1), rgba(24, 169, 87, 0.05));
+      border: 1px solid rgba(24, 169, 87, 0.3);
+      border-left: 4px solid var(--turbo-green);
       border-radius: 12px;
     }
 
     .batch-results h3 {
-      color: var(--turbo-blue);
+      color: var(--fg-muted);
       margin: 0 0 16px 0;
     }
 
@@ -410,6 +424,759 @@
       display: flex;
       align-items: center;
       gap: 8px;
+    }
+
+    /* File details accordion */
+    .file-payment-badge {
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .payment-usdc {
+      background: rgba(24, 169, 87, 0.15);
+      color: var(--turbo-green);
+      border: 1px solid rgba(24, 169, 87, 0.3);
+    }
+
+    .payment-credits {
+      background: rgba(49, 66, 196, 0.15);
+      color: var(--turbo-blue);
+      border: 1px solid rgba(49, 66, 196, 0.3);
+    }
+
+    .file-details-toggle {
+      padding: 4px 12px;
+      background: rgba(254, 2, 48, 0.1);
+      border: 1px solid rgba(254, 2, 48, 0.3);
+      color: var(--turbo-red);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      font-weight: 600;
+      transition: all 150ms;
+      flex-shrink: 0;
+      font-family: 'Rubik', sans-serif;
+      margin: 0;
+    }
+
+    .file-details-toggle:hover {
+      background: rgba(254, 2, 48, 0.2);
+    }
+
+    .file-details-panel {
+      margin-top: 12px;
+      padding: 16px;
+      background: var(--canvas);
+      border: 1px solid var(--default);
+      border-radius: 8px;
+      display: none;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      font-size: 0.8125rem;
+    }
+
+    .file-details-panel.expanded {
+      display: grid;
+    }
+
+    .file-detail-item {
+      padding: 8px;
+      background: var(--surface);
+      border-radius: 6px;
+    }
+
+    .file-detail-label {
+      color: var(--link);
+      font-weight: 600;
+      display: block;
+      margin-bottom: 4px;
+      font-size: 0.75rem;
+    }
+
+    .file-detail-value {
+      color: var(--fg-muted);
+      font-family: monospace;
+      font-size: 0.75rem;
+      word-break: break-all;
+    }
+
+    .file-detail-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      background: var(--turbo-red);
+      color: white;
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.75rem;
+      transition: background-color 150ms;
+      margin-top: 12px;
+      display: block;
+      width: fit-content;
+    }
+
+    .file-detail-link:hover {
+      background: rgba(254, 2, 48, 0.9);
+    }
+
+    .file-detail-full {
+      grid-column: 1 / -1;
+    }
+
+    /* Per-file tag editor */
+    .file-tags-toggle {
+      padding: 4px 12px;
+      background: rgba(255, 187, 56, 0.1);
+      border: 1px solid rgba(255, 187, 56, 0.3);
+      color: var(--turbo-yellow);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      font-weight: 600;
+      transition: all 150ms;
+      flex-shrink: 0;
+      font-family: 'Rubik', sans-serif;
+      margin: 0;
+    }
+
+    .file-tags-toggle:hover {
+      background: rgba(255, 187, 56, 0.2);
+    }
+
+    .file-tags-panel {
+      margin-top: 12px;
+      padding: 16px;
+      background: var(--canvas);
+      border: 1px solid var(--default);
+      border-radius: 8px;
+      display: none;
+    }
+
+    .file-tags-panel.expanded {
+      display: block;
+    }
+
+    .file-tag-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .file-tag-row input {
+      margin: 0;
+      padding: 8px;
+      font-size: 0.8125rem;
+    }
+
+    .file-tag-name {
+      width: 150px;
+    }
+
+    .file-tag-value {
+      flex: 1;
+      min-width: 200px;
+    }
+
+    .file-tag-remove {
+      padding: 6px 10px;
+      background: rgba(254, 2, 48, 0.1);
+      border: 1px solid var(--turbo-red);
+      color: var(--turbo-red);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      font-weight: 600;
+      transition: background 150ms;
+      font-family: 'Rubik', sans-serif;
+    }
+
+    .file-tag-remove:hover {
+      background: rgba(254, 2, 48, 0.2);
+    }
+
+    .file-tag-add {
+      padding: 6px 12px;
+      background: rgba(24, 169, 87, 0.1);
+      border: 1px solid var(--turbo-green);
+      color: var(--turbo-green);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      font-weight: 600;
+      transition: background 150ms;
+      margin-top: 8px;
+      font-family: 'Rubik', sans-serif;
+    }
+
+    .file-tag-add:hover {
+      background: rgba(24, 169, 87, 0.2);
+    }
+
+    /* Tag header and labels */
+    .file-tags-header {
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--default);
+    }
+
+    .file-tags-title {
+      display: block;
+      color: var(--fg-muted);
+      font-weight: 600;
+      font-size: 0.9rem;
+      margin-bottom: 4px;
+    }
+
+    .file-tags-hint {
+      display: block;
+      color: var(--link);
+      font-size: 0.75rem;
+    }
+
+    .file-tag-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .file-tag-label {
+      color: var(--link);
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* On desktop, hide labels and use inline layout */
+    @media (min-width: 769px) {
+      .file-tag-label {
+        display: none;
+      }
+
+      .file-tag-field {
+        flex-direction: row;
+      }
+
+      .file-tag-row {
+        flex-direction: row;
+        align-items: center;
+      }
+
+      .file-tag-field:first-child {
+        width: 150px;
+        flex-shrink: 0;
+      }
+
+      .file-tag-field:nth-child(2) {
+        flex: 1;
+        min-width: 200px;
+      }
+    }
+
+    /* ==================== MOBILE RESPONSIVE STYLES ==================== */
+    @media (max-width: 768px) {
+      body {
+        padding: 16px 12px;
+      }
+
+      .container {
+        padding: 20px 16px;
+        border-radius: 8px;
+      }
+
+      h1 {
+        font-size: 1.5rem;
+        margin-bottom: 16px;
+      }
+
+      /* Mode selector tabs - stack on mobile */
+      .mode-selector {
+        flex-direction: column;
+        gap: 0;
+      }
+
+      .mode-tab {
+        padding: 14px 16px;
+        text-align: left;
+        border-bottom: none;
+        border-left: 3px solid transparent;
+        margin-bottom: 0;
+      }
+
+      .mode-tab.active {
+        border-bottom: none;
+        border-left-color: var(--turbo-red);
+        background: rgba(254, 2, 48, 0.05);
+      }
+
+      .badge {
+        font-size: 10px;
+        padding: 3px 8px;
+      }
+
+      /* Info sections */
+      .info, .service-notice {
+        padding: 16px;
+        margin: 16px 0;
+      }
+
+      .info ul {
+        margin-left: 16px;
+      }
+
+      /* Config section */
+      .config {
+        padding: 16px;
+      }
+
+      .config label {
+        font-size: 0.8125rem;
+      }
+
+      /* Steps */
+      .step {
+        padding: 16px;
+        margin: 16px 0;
+      }
+
+      .step h3 {
+        font-size: 1rem;
+      }
+
+      /* Buttons - full width on mobile */
+      button {
+        width: 100%;
+        padding: 14px 20px;
+        font-size: 1rem;
+        margin: 8px 0;
+      }
+
+      .btn-secondary {
+        padding: 12px 16px;
+      }
+
+      /* File list - mobile optimized */
+      .file-list-item {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+        padding: 14px;
+      }
+
+      .file-list-item > * {
+        width: 100%;
+      }
+
+      .file-status-icon {
+        position: absolute;
+        top: 14px;
+        left: 14px;
+      }
+
+      .file-list-item {
+        position: relative;
+        padding-left: 48px;
+      }
+
+      .file-name {
+        min-width: unset;
+        font-size: 0.9rem;
+        font-weight: 500;
+      }
+
+      .file-size {
+        font-size: 0.8rem;
+      }
+
+      /* File action buttons row */
+      .file-actions-row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 8px;
+      }
+
+      .file-remove-btn,
+      .file-tags-toggle,
+      .file-details-toggle {
+        flex: 1;
+        min-width: 80px;
+        padding: 10px 12px;
+        font-size: 0.8rem;
+        text-align: center;
+      }
+
+      /* Payment badge */
+      .file-payment-badge {
+        display: block;
+        text-align: center;
+        padding: 8px 12px;
+        font-size: 0.8rem;
+        margin-bottom: 8px;
+      }
+
+      /* File details panel - mobile optimized */
+      .file-details-panel {
+        grid-template-columns: 1fr;
+        padding: 12px;
+        gap: 10px;
+      }
+
+      .file-details-panel.expanded {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .file-detail-item {
+        padding: 12px;
+      }
+
+      .file-detail-label {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 6px;
+      }
+
+      .file-detail-value {
+        font-size: 0.8rem;
+        line-height: 1.4;
+      }
+
+      .file-detail-link {
+        width: 100%;
+        justify-content: center;
+        padding: 12px 16px;
+        font-size: 0.875rem;
+        margin-top: 8px;
+      }
+
+      /* Tags panel - mobile */
+      .file-tags-panel {
+        padding: 16px;
+      }
+
+      .file-tags-header {
+        margin-bottom: 16px;
+        padding-bottom: 12px;
+      }
+
+      .file-tags-title {
+        font-size: 1rem;
+      }
+
+      .file-tags-hint {
+        font-size: 0.8rem;
+        margin-top: 4px;
+      }
+
+      .file-tag-row {
+        flex-direction: column;
+        gap: 12px;
+        align-items: stretch;
+        padding: 16px;
+        background: var(--surface);
+        border-radius: 8px;
+        margin-bottom: 12px;
+      }
+
+      .file-tag-field {
+        width: 100%;
+      }
+
+      .file-tag-label {
+        display: block !important;
+        margin-bottom: 6px;
+        font-size: 0.75rem;
+      }
+
+      .file-tag-row input {
+        width: 100% !important;
+        min-width: unset !important;
+        max-width: 100% !important;
+        box-sizing: border-box;
+        padding: 14px 12px;
+      }
+
+      .file-tag-name,
+      .file-tag-value {
+        width: 100% !important;
+        min-width: unset !important;
+        flex: none;
+      }
+
+      .file-tag-remove {
+        width: 100%;
+        padding: 12px;
+        margin-top: 4px;
+      }
+
+      .file-tag-add {
+        width: 100%;
+        padding: 14px;
+        text-align: center;
+        margin-top: 8px;
+        font-size: 0.9rem;
+      }
+
+      /* Batch results - mobile */
+      .batch-results {
+        padding: 16px;
+      }
+
+      .batch-summary {
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      /* Upload progress */
+      #uploadProgress {
+        padding: 0 4px;
+      }
+
+      #progressText {
+        font-size: 0.8rem;
+      }
+
+      /* Log console - mobile */
+      .log {
+        font-size: 11px;
+        padding: 12px;
+        max-height: 300px;
+      }
+
+      /* Wallet info */
+      #walletInfo p {
+        font-size: 0.8rem;
+        word-break: break-all;
+      }
+
+      /* Inputs */
+      input[type="text"],
+      input[type="file"],
+      select {
+        padding: 14px 12px;
+        font-size: 16px; /* Prevents zoom on iOS */
+      }
+    }
+
+    /* Extra small screens */
+    @media (max-width: 400px) {
+      .container {
+        padding: 16px 12px;
+      }
+
+      h1 {
+        font-size: 1.25rem;
+      }
+
+      .mode-tab {
+        padding: 12px;
+        font-size: 0.875rem;
+      }
+
+      .badge {
+        display: none;
+      }
+
+      button {
+        padding: 12px 16px;
+        font-size: 0.9rem;
+      }
+
+      .file-detail-value {
+        font-size: 0.7rem;
+      }
+    }
+
+    /* ==================== MOBILE SUCCESS CARD ==================== */
+    .mobile-success-card {
+      background: linear-gradient(135deg, rgba(24, 169, 87, 0.15), rgba(24, 169, 87, 0.05));
+      border: 1px solid rgba(24, 169, 87, 0.3);
+      border-radius: 12px;
+      padding: 16px;
+      margin-top: 12px;
+    }
+
+    .mobile-success-card .success-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .mobile-success-card .success-icon {
+      font-size: 24px;
+    }
+
+    .mobile-success-card .success-title {
+      color: var(--turbo-green);
+      font-weight: 700;
+      font-size: 1rem;
+    }
+
+    .mobile-success-card .tx-id-section {
+      background: var(--canvas);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+
+    .mobile-success-card .tx-id-label {
+      font-size: 0.7rem;
+      color: var(--link);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+
+    .mobile-success-card .tx-id-value {
+      font-family: monospace;
+      font-size: 0.75rem;
+      color: var(--fg-muted);
+      word-break: break-all;
+      line-height: 1.4;
+    }
+
+    .mobile-success-card .view-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 14px;
+      background: var(--turbo-green);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 0.9rem;
+      text-decoration: none;
+      margin-bottom: 12px;
+    }
+
+    .mobile-success-card .view-btn:hover {
+      background: #15924d;
+    }
+
+    .mobile-success-card .details-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .mobile-success-card .detail-box {
+      background: var(--surface);
+      border-radius: 6px;
+      padding: 10px;
+    }
+
+    .mobile-success-card .detail-box.full-width {
+      grid-column: 1 / -1;
+    }
+
+    .mobile-success-card .detail-label {
+      font-size: 0.65rem;
+      color: var(--link);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .mobile-success-card .detail-value {
+      font-size: 0.8rem;
+      color: var(--fg-muted);
+      font-weight: 500;
+      word-break: break-all;
+    }
+
+    .mobile-success-card .detail-value.highlight {
+      color: var(--turbo-green);
+    }
+
+    /* ==================== MOBILE ERROR CARD ==================== */
+    .mobile-error-card {
+      background: linear-gradient(135deg, rgba(254, 2, 48, 0.15), rgba(254, 2, 48, 0.05));
+      border: 1px solid rgba(254, 2, 48, 0.3);
+      border-radius: 12px;
+      padding: 16px;
+      margin-top: 12px;
+    }
+
+    .mobile-error-card .error-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .mobile-error-card .error-icon {
+      font-size: 24px;
+    }
+
+    .mobile-error-card .error-title {
+      color: var(--turbo-red);
+      font-weight: 700;
+      font-size: 1rem;
+    }
+
+    .mobile-error-card .error-message {
+      background: var(--canvas);
+      border-radius: 8px;
+      padding: 12px;
+      color: var(--fg-muted);
+      font-size: 0.85rem;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+
+    /* Mobile-specific details button improvements */
+    @media (max-width: 768px) {
+      .file-details-toggle {
+        background: var(--turbo-green) !important;
+        border-color: var(--turbo-green) !important;
+        color: white !important;
+        padding: 12px 16px !important;
+        font-size: 0.9rem !important;
+        margin-top: 8px;
+      }
+
+      .file-details-toggle:hover {
+        background: #15924d !important;
+      }
+
+      /* When expanded, show a subtle style */
+      .file-details-panel.expanded + .file-details-toggle,
+      .file-details-toggle[style*="Hide"] {
+        background: var(--surface) !important;
+        border-color: var(--default) !important;
+        color: var(--link) !important;
+      }
+
+      /* Ensure mobile success card fills width */
+      .mobile-success-card {
+        width: 100%;
+      }
+
+      /* File error on mobile - full width and clearer */
+      .file-error {
+        display: block;
+        width: 100%;
+        padding: 10px 12px;
+        background: rgba(254, 2, 48, 0.1);
+        border: 1px solid rgba(254, 2, 48, 0.3);
+        border-radius: 8px;
+        margin-top: 8px;
+        font-size: 0.8rem;
+        line-height: 1.4;
+      }
     }
   </style>
 </head>
@@ -489,19 +1256,7 @@
     </div>
 
     <div class="step">
-      <h3>Step 3: Custom Tags (Optional)</h3>
-      <p>Add custom metadata tags to your upload</p>
-      <div id="tagsContainer">
-        <div class="tag-row">
-          <input type="text" placeholder="Tag name" class="tag-name" style="width: 200px;">
-          <input type="text" placeholder="Tag value" class="tag-value" style="width: 300px;">
-        </div>
-      </div>
-      <button id="addTagBtn" class="btn-secondary">+ Add Another Tag</button>
-    </div>
-
-    <div class="step">
-      <h3>Step 4: Upload</h3>
+      <h3>Step 3: Upload</h3>
       <button id="uploadBtn" disabled>Upload All Files with x402 Payment</button>
       <button id="cancelBtn" class="btn-secondary hidden" style="background: var(--canvas) !important; border: 1px solid var(--turbo-red) !important; color: var(--turbo-red) !important;">Cancel Batch</button>
       <div id="uploadProgress" class="hidden" style="margin-top: 16px;">
@@ -548,6 +1303,9 @@
     let cancelUpload = false; // Flag to cancel batch upload
     let uploadResults = []; // Store results for all files
     let dataSigner = null; // Reusable MetaMask signer for arbundles (signed mode)
+    let fileTags = {}; // Store tags per file index: { 0: [{name, value}], 1: [...] }
+    let isMiniApp = false; // Whether we're running inside Farcaster/Base Mini App
+    let farcasterProvider = null; // Farcaster wallet provider
 
     // File upload limits
     const LIMITS = {
@@ -569,7 +1327,80 @@
       },
     };
 
+    // Detect if we're in a Farcaster Mini App context
+    async function detectMiniApp() {
+      // Check for Farcaster SDK
+      if (window.farcasterSdk) {
+        try {
+          const context = await window.farcasterSdk.context;
+          if (context && context.user) {
+            isMiniApp = true;
+            log('🎯 Running inside Farcaster Mini App!', 'success');
+            log(`User: ${context.user.displayName || context.user.username}`, 'info');
+
+            // Get the Ethereum provider from Farcaster SDK
+            farcasterProvider = await window.farcasterSdk.wallet.getEthereumProvider();
+
+            // Disable signed mode - signMessage not supported in Mini App
+            const signedTab = document.querySelector('[data-mode="signed"]');
+            if (signedTab) {
+              signedTab.disabled = true;
+              signedTab.style.opacity = '0.5';
+              signedTab.style.cursor = 'not-allowed';
+              signedTab.title = 'Signed data items not supported in Mini App (signMessage unavailable)';
+            }
+
+            // Update connect button text
+            document.getElementById('connectBtn').textContent = 'Connect Base Wallet';
+
+            // Show Mini App notice
+            showMiniAppNotice();
+
+            return true;
+          }
+        } catch (e) {
+          console.log('Not in Farcaster context:', e);
+        }
+      }
+
+      // Also check for window.parent !== window (iframe detection)
+      if (window.parent !== window) {
+        log('⚠️ Running in iframe - may be Mini App context', 'warning');
+      }
+
+      return false;
+    }
+
+    // Show notice about Mini App limitations
+    function showMiniAppNotice() {
+      const notice = document.createElement('div');
+      notice.className = 'service-notice';
+      notice.innerHTML = `
+        <strong>🎯 Mini App Mode Active</strong>
+        <p class="notice-text">
+          Running inside Base/Farcaster Mini App. <span class="notice-highlight">Signed data items are disabled</span>
+          because message signing is not yet supported in Mini Apps.
+        </p>
+        <p class="notice-text" style="margin-top: 8px;">
+          <strong>Payment Note:</strong> If you have <span class="notice-highlight">pre-purchased credits</span>,
+          uploads will use those automatically. Otherwise, you'll need USDC for x402 payment
+          (requires <code>signTypedData</code> which may not be supported yet).
+        </p>
+      `;
+
+      const container = document.querySelector('.container');
+      const modeSelector = document.querySelector('.mode-selector');
+      container.insertBefore(notice, modeSelector);
+    }
+
     async function switchMode(mode) {
+      // Block signed mode in Mini App context
+      if (mode === 'signed' && isMiniApp) {
+        log('❌ Signed data items not available in Mini App (signMessage not supported)', 'error');
+        alert('Signed data items are not available in Mini App mode because message signing (signMessage) is not yet supported by the Base wallet.');
+        return;
+      }
+
       currentMode = mode;
 
       // Update tab styling
@@ -589,8 +1420,8 @@
         document.getElementById('info-raw').classList.add('hidden');
         document.getElementById('info-signed').classList.remove('hidden');
 
-        // Initialize data signer if wallet already connected
-        if (signer && !dataSigner) {
+        // Initialize data signer if wallet already connected (only outside Mini App)
+        if (signer && !dataSigner && !isMiniApp) {
           log('Initializing data signer for signed mode...', 'info');
           dataSigner = new MetaMaskSigner(signer, userAddress);
           await dataSigner.setPublicKey();
@@ -610,9 +1441,20 @@
       console.log(message);
     }
 
-    window.addEventListener('load', () => {
+    window.addEventListener('load', async () => {
       log('Page loaded', 'info');
-      if (!window.ethereum) {
+
+      // Wait a moment for Farcaster SDK to initialize
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Check if we're in Mini App context first
+      const inMiniApp = await detectMiniApp();
+
+      if (inMiniApp) {
+        log('✅ Farcaster wallet provider available', 'success');
+        // Auto-connect in Mini App context
+        document.getElementById('connectBtn').click();
+      } else if (!window.ethereum) {
         log('❌ MetaMask not detected! Access via http:// (not file://)', 'error');
         document.getElementById('connectBtn').textContent = 'MetaMask Not Found';
         document.getElementById('connectBtn').disabled = true;
@@ -625,17 +1467,23 @@
 
     document.getElementById('connectBtn').addEventListener('click', async () => {
       try {
-        if (!window.ethereum) {
-          alert('MetaMask not found!\\n\\n1. Install MetaMask from https://metamask.io\\n2. Access this page via http:// (not file://)');
+        // Determine which provider to use
+        let ethProvider;
+        if (isMiniApp && farcasterProvider) {
+          ethProvider = farcasterProvider;
+          log('Using Farcaster wallet provider...', 'info');
+        } else if (window.ethereum) {
+          ethProvider = window.ethereum;
+          log('Requesting MetaMask connection...', 'info');
+        } else {
+          alert('No wallet found!\\n\\n1. If using MetaMask, install from https://metamask.io\\n2. If in Mini App, ensure wallet is connected');
           return;
         }
 
-        log('Requesting MetaMask connection...', 'info');
-
-        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        const accounts = await ethProvider.request({ method: 'eth_requestAccounts' });
         userAddress = accounts[0];
 
-        provider = new ethers.BrowserProvider(window.ethereum);
+        provider = new ethers.BrowserProvider(ethProvider);
         signer = await provider.getSigner();
 
         log(`✅ Connected: ${userAddress}`, 'success');
@@ -649,11 +1497,14 @@
         if (Number(network.chainId) !== config.chainId) {
           log(`⚠️ Please switch to ${config.name}`, 'warning');
           try {
-            await window.ethereum.request({
+            await ethProvider.request({
               method: 'wallet_switchEthereumChain',
               params: [{ chainId: `0x${config.chainId.toString(16)}` }],
             });
             log(`✅ Switched to ${config.name}`, 'success');
+            // Refresh provider after network switch
+            provider = new ethers.BrowserProvider(ethProvider);
+            signer = await provider.getSigner();
           } catch (err) {
             log(`Failed to switch network: ${err.message}`, 'error');
           }
@@ -667,19 +1518,24 @@
         const balance = await usdcContract.balanceOf(userAddress);
         const balanceFormatted = ethers.formatUnits(balance, 6);
 
+        // Show wallet info with Mini App indicator if applicable
+        const miniAppBadge = isMiniApp ? '<span style="background: var(--turbo-blue); color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 8px;">Mini App</span>' : '';
         document.getElementById('walletInfo').innerHTML = `
-          <p>✅ Connected: ${userAddress}</p>
+          <p>✅ Connected: ${userAddress}${miniAppBadge}</p>
           <p>🌐 Network: ${config.name}</p>
           <p>💵 USDC Balance: ${balanceFormatted} USDC</p>
         `;
 
         log(`USDC Balance: ${balanceFormatted} USDC`, 'info');
 
-        // Initialize data signer for signed mode (derive public key once)
-        if (currentMode === 'signed') {
+        // Initialize data signer for signed mode (only if NOT in Mini App)
+        if (currentMode === 'signed' && !isMiniApp) {
           log('Initializing data signer for signed mode...', 'info');
           dataSigner = new MetaMaskSigner(signer, userAddress);
           await dataSigner.setPublicKey();
+        } else if (currentMode === 'signed' && isMiniApp) {
+          log('⚠️ Signed mode not available in Mini App - using raw mode', 'warning');
+          switchMode('raw');
         }
 
         if (selectedFiles.length > 0) {
@@ -729,6 +1585,20 @@
     // Helper function to remove file from list
     function removeFile(index) {
       selectedFiles.splice(index, 1);
+
+      // Rebuild fileTags object with new indices
+      const oldTags = { ...fileTags };
+      fileTags = {};
+      Object.keys(oldTags).forEach(key => {
+        const idx = parseInt(key);
+        if (idx < index) {
+          fileTags[idx] = oldTags[idx];
+        } else if (idx > index) {
+          fileTags[idx - 1] = oldTags[idx];
+        }
+        // Skip the removed index
+      });
+
       displayFileList();
       if (selectedFiles.length === 0) {
         document.getElementById('uploadBtn').disabled = true;
@@ -749,15 +1619,46 @@
       const totalSize = selectedFiles.reduce((sum, f) => sum + f.size, 0);
       fileInfoDiv.innerHTML = `📦 ${selectedFiles.length} file(s) selected | Total size: ${formatFileSize(totalSize)}`;
 
-      fileListDiv.innerHTML = selectedFiles.map((file, index) => `
-        <div class="file-list-item" id="file-item-${index}">
-          <div class="file-status-icon file-status-pending" id="file-status-${index}">⏳</div>
-          <div class="file-name" id="file-name-${index}">${file.name}</div>
-          <div class="file-size">${formatFileSize(file.size)}</div>
-          <button class="file-remove-btn" id="file-remove-${index}" onclick="removeFile(${index})">Remove</button>
-          <div id="file-result-${index}"></div>
-        </div>
-      `).join('');
+      fileListDiv.innerHTML = selectedFiles.map((file, index) => {
+        // Initialize tags for this file if not exists
+        if (!fileTags[index]) {
+          fileTags[index] = [];
+        }
+
+        return `
+          <div style="margin-bottom: 16px;">
+            <div class="file-list-item" id="file-item-${index}">
+              <div class="file-status-icon file-status-pending" id="file-status-${index}">⏳</div>
+              <div class="file-name" id="file-name-${index}">${file.name}</div>
+              <div class="file-size">${formatFileSize(file.size)}</div>
+              <div id="file-payment-${index}"></div>
+              <button class="file-tags-toggle" id="file-tags-toggle-${index}" onclick="toggleFileTags(${index})">🏷️ Tags</button>
+              <button class="file-remove-btn" id="file-remove-${index}" onclick="removeFile(${index})">Remove</button>
+              <button class="file-details-toggle hidden" id="file-toggle-${index}" onclick="toggleFileDetails(${index})">▼ Details</button>
+            </div>
+            <div class="file-tags-panel" id="file-tags-${index}">
+              <div class="file-tags-header">
+                <span class="file-tags-title">Custom Tags</span>
+                <span class="file-tags-hint">Add metadata tags to this file</span>
+              </div>
+              <div id="file-tags-container-${index}">
+                <div class="file-tag-row">
+                  <div class="file-tag-field">
+                    <label class="file-tag-label">Tag Name</label>
+                    <input type="text" placeholder="e.g. Author" class="file-tag-name" data-file="${index}" data-tag="0">
+                  </div>
+                  <div class="file-tag-field">
+                    <label class="file-tag-label">Tag Value</label>
+                    <input type="text" placeholder="e.g. John Doe" class="file-tag-value" data-file="${index}" data-tag="0">
+                  </div>
+                </div>
+              </div>
+              <button class="file-tag-add" onclick="addFileTag(${index})">+ Add Another Tag</button>
+            </div>
+            <div class="file-details-panel" id="file-details-${index}"></div>
+          </div>
+        `;
+      }).join('');
     }
 
     // Disable all remove buttons during upload
@@ -776,10 +1677,294 @@
       });
     }
 
+    // Toggle file details panel
+    function toggleFileDetails(index) {
+      const panel = document.getElementById(`file-details-${index}`);
+      const toggle = document.getElementById(`file-toggle-${index}`);
+
+      if (panel.classList.contains('expanded')) {
+        panel.classList.remove('expanded');
+        toggle.textContent = '▼ Details';
+      } else {
+        panel.classList.add('expanded');
+        toggle.textContent = '▲ Hide';
+      }
+    }
+
+    // Toggle file tags panel
+    function toggleFileTags(index) {
+      const panel = document.getElementById(`file-tags-${index}`);
+      const toggle = document.getElementById(`file-tags-toggle-${index}`);
+
+      if (panel.classList.contains('expanded')) {
+        panel.classList.remove('expanded');
+        toggle.textContent = '🏷️ Tags';
+      } else {
+        panel.classList.add('expanded');
+        toggle.textContent = '🏷️ Hide';
+      }
+    }
+
+    // Add a tag row for a specific file
+    function addFileTag(fileIndex) {
+      const container = document.getElementById(`file-tags-container-${fileIndex}`);
+      const tagIndex = container.children.length;
+
+      const newRow = document.createElement('div');
+      newRow.className = 'file-tag-row';
+      newRow.innerHTML = `
+        <div class="file-tag-field">
+          <label class="file-tag-label">Tag Name</label>
+          <input type="text" placeholder="e.g. Category" class="file-tag-name" data-file="${fileIndex}" data-tag="${tagIndex}">
+        </div>
+        <div class="file-tag-field">
+          <label class="file-tag-label">Tag Value</label>
+          <input type="text" placeholder="e.g. Documents" class="file-tag-value" data-file="${fileIndex}" data-tag="${tagIndex}">
+        </div>
+        <button class="file-tag-remove" onclick="removeFileTag(this)">Remove Tag</button>
+      `;
+      container.appendChild(newRow);
+    }
+
+    // Remove a tag row
+    function removeFileTag(button) {
+      button.parentElement.remove();
+    }
+
+    // Get tags for a specific file from the UI
+    function getFileTags(fileIndex) {
+      const container = document.getElementById(`file-tags-container-${fileIndex}`);
+      if (!container) return [];
+
+      const tags = [];
+      const rows = container.querySelectorAll('.file-tag-row');
+
+      rows.forEach(row => {
+        const nameInput = row.querySelector('.file-tag-name');
+        const valueInput = row.querySelector('.file-tag-value');
+
+        if (nameInput && valueInput && nameInput.value.trim() && valueInput.value.trim()) {
+          tags.push({
+            name: nameInput.value.trim(),
+            value: valueInput.value.trim()
+          });
+        }
+      });
+
+      return tags;
+    }
+
+    // Check if we're on mobile
+    function isMobileDevice() {
+      return window.matchMedia('(max-width: 768px)').matches;
+    }
+
+    // Render detailed info panel for a file
+    function renderFileDetails(index, uploadResult) {
+      const panel = document.getElementById(`file-details-${index}`);
+      const result = uploadResult.result;
+      const paidUsdcAmount = uploadResult.paidUsdcAmount;
+
+      if (!panel || !result) return;
+
+      // Determine gateway host
+      let gatewayHost = 'arweave.net';
+      if (result.dataCaches && result.dataCaches.length > 0) {
+        const currentHost = window.location.hostname;
+        const matchingCache = result.dataCaches.find(cache => cache === currentHost);
+        gatewayHost = matchingCache || result.dataCaches[0];
+      }
+      const txUrl = `https://${gatewayHost}/${result.id}`;
+
+      // Use mobile-optimized layout on small screens
+      if (isMobileDevice()) {
+        let detailsHtml = `
+          <div class="mobile-success-card">
+            <div class="success-header">
+              <span class="success-icon">✅</span>
+              <span class="success-title">Upload Successful</span>
+            </div>
+
+            <div class="tx-id-section">
+              <div class="tx-id-label">Transaction ID</div>
+              <div class="tx-id-value">${result.id}</div>
+            </div>
+
+            <a href="${txUrl}" target="_blank" class="view-btn">
+              <span>View on Arweave</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                <polyline points="15 3 21 3 21 9"></polyline>
+                <line x1="10" y1="14" x2="21" y2="3"></line>
+              </svg>
+            </a>
+
+            <div class="details-grid">
+        `;
+
+        // Payment info - prominent on mobile
+        if (paidUsdcAmount) {
+          detailsHtml += `
+            <div class="detail-box">
+              <div class="detail-label">Payment</div>
+              <div class="detail-value highlight">${paidUsdcAmount} USDC</div>
+            </div>
+          `;
+        } else {
+          detailsHtml += `
+            <div class="detail-box">
+              <div class="detail-label">Payment</div>
+              <div class="detail-value" style="color: var(--turbo-blue);">Credits Used</div>
+            </div>
+          `;
+        }
+
+        // Storage cost
+        if (result.receipt) {
+          detailsHtml += `
+            <div class="detail-box">
+              <div class="detail-label">Storage Cost</div>
+              <div class="detail-value">${result.receipt.winc} Winston</div>
+            </div>
+          `;
+        }
+
+        // Timestamp
+        if (result.receipt && result.receipt.timestamp) {
+          detailsHtml += `
+            <div class="detail-box">
+              <div class="detail-label">Timestamp</div>
+              <div class="detail-value">${new Date(result.receipt.timestamp).toLocaleString()}</div>
+            </div>
+          `;
+        }
+
+        // Network info
+        if (result.x402Payment && result.x402Payment.network) {
+          detailsHtml += `
+            <div class="detail-box">
+              <div class="detail-label">Network</div>
+              <div class="detail-value">${result.x402Payment.network}</div>
+            </div>
+          `;
+        }
+
+        // Owner - full width for long addresses
+        if (result.owner) {
+          detailsHtml += `
+            <div class="detail-box full-width">
+              <div class="detail-label">Owner</div>
+              <div class="detail-value">${result.owner}</div>
+            </div>
+          `;
+        }
+
+        // Payer - full width for long addresses
+        if (result.payer) {
+          detailsHtml += `
+            <div class="detail-box full-width">
+              <div class="detail-label">Payer</div>
+              <div class="detail-value">${result.payer}</div>
+            </div>
+          `;
+        }
+
+        detailsHtml += `
+            </div>
+          </div>
+        `;
+
+        panel.innerHTML = detailsHtml;
+        return;
+      }
+
+      // Desktop layout (original grid-based layout)
+      let detailsHtml = `
+        <div class="file-detail-item file-detail-full">
+          <span class="file-detail-label">Transaction ID:</span>
+          <span class="file-detail-value">${result.id}</span>
+          <a href="${txUrl}" target="_blank" class="file-detail-link">
+            <span>View on Arweave</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+              <polyline points="15 3 21 3 21 9"></polyline>
+              <line x1="10" y1="14" x2="21" y2="3"></line>
+            </svg>
+          </a>
+        </div>
+      `;
+
+      if (result.owner) {
+        detailsHtml += `
+          <div class="file-detail-item">
+            <span class="file-detail-label">Owner:</span>
+            <span class="file-detail-value">${result.owner}</span>
+          </div>
+        `;
+      }
+
+      if (result.payer) {
+        detailsHtml += `
+          <div class="file-detail-item">
+            <span class="file-detail-label">Payer:</span>
+            <span class="file-detail-value">${result.payer}</span>
+          </div>
+        `;
+      }
+
+      if (result.receipt) {
+        detailsHtml += `
+          <div class="file-detail-item">
+            <span class="file-detail-label">Storage Cost:</span>
+            <span class="file-detail-value">${result.receipt.winc} Winston</span>
+          </div>
+          <div class="file-detail-item">
+            <span class="file-detail-label">Timestamp:</span>
+            <span class="file-detail-value">${new Date(result.receipt.timestamp).toLocaleString()}</span>
+          </div>
+        `;
+      }
+
+      if (paidUsdcAmount) {
+        detailsHtml += `
+          <div class="file-detail-item">
+            <span class="file-detail-label">USDC Paid:</span>
+            <span class="file-detail-value" style="color: var(--turbo-green); font-weight: 700;">${paidUsdcAmount} USDC</span>
+          </div>
+        `;
+      }
+
+      if (result.x402Payment) {
+        if (result.x402Payment.network) {
+          detailsHtml += `
+            <div class="file-detail-item">
+              <span class="file-detail-label">Payment Network:</span>
+              <span class="file-detail-value">${result.x402Payment.network}</span>
+            </div>
+          `;
+        }
+        if (result.x402Payment.mode) {
+          detailsHtml += `
+            <div class="file-detail-item">
+              <span class="file-detail-label">Payment Mode:</span>
+              <span class="file-detail-value">${result.x402Payment.mode}</span>
+            </div>
+          `;
+        }
+      }
+
+      panel.innerHTML = detailsHtml;
+    }
+
     // Update file status during upload
-    function updateFileStatus(index, status, message = '') {
+    function updateFileStatus(index, status, uploadResult = null) {
       const statusIcon = document.getElementById(`file-status-${index}`);
-      const resultDiv = document.getElementById(`file-result-${index}`);
+      const paymentDiv = document.getElementById(`file-payment-${index}`);
+      const toggleBtn = document.getElementById(`file-toggle-${index}`);
+      const removeBtn = document.getElementById(`file-remove-${index}`);
+      const tagsToggleBtn = document.getElementById(`file-tags-toggle-${index}`);
+      const detailsPanel = document.getElementById(`file-details-${index}`);
+
       if (!statusIcon) return;
 
       statusIcon.className = `file-status-icon file-status-${status}`;
@@ -793,15 +1978,55 @@
           break;
         case 'success':
           statusIcon.textContent = '✅';
-          if (message) {
-            resultDiv.innerHTML = `<a href="https://vilenarios.com/${message}" target="_blank" class="file-result-link" title="View on Arweave">${message.substring(0, 8)}...</a>`;
+          if (uploadResult) {
+            // Show payment badge
+            const paidUsdcAmount = uploadResult.paidUsdcAmount;
+            paymentDiv.innerHTML = ''; // Clear existing content
+            const badgeSpan = document.createElement('span');
+            badgeSpan.className = paidUsdcAmount ? 'file-payment-badge payment-usdc' : 'file-payment-badge payment-credits';
+            badgeSpan.textContent = paidUsdcAmount ? `💳 ${paidUsdcAmount} USDC` : '💎 Credits';
+            paymentDiv.appendChild(badgeSpan);
+
+            // Show details toggle and hide tags/remove buttons
+            toggleBtn.classList.remove('hidden');
+            removeBtn.classList.add('hidden');
+            if (tagsToggleBtn) tagsToggleBtn.classList.add('hidden');
+            renderFileDetails(index, uploadResult);
+
+            // Auto-expand details on mobile for better UX
+            if (isMobileDevice() && detailsPanel) {
+              detailsPanel.classList.add('expanded');
+              toggleBtn.textContent = '▲ Hide';
+            }
           }
           break;
         case 'failed':
           statusIcon.textContent = '❌';
-          if (message) {
-            resultDiv.innerHTML = `<span class="file-error" title="${message}">Error</span>`;
+          if (uploadResult && uploadResult.error) {
+            paymentDiv.innerHTML = ''; // Clear existing content
+
+            // Use mobile-friendly error card on mobile
+            if (isMobileDevice()) {
+              const errorCard = document.createElement('div');
+              errorCard.className = 'mobile-error-card';
+              errorCard.innerHTML = `
+                <div class="error-header">
+                  <span class="error-icon">❌</span>
+                  <span class="error-title">Upload Failed</span>
+                </div>
+                <div class="error-message">${uploadResult.error}</div>
+              `;
+              paymentDiv.appendChild(errorCard);
+            } else {
+              const errorSpan = document.createElement('span');
+              errorSpan.className = 'file-error';
+              errorSpan.textContent = `Error: ${uploadResult.error}`;
+              errorSpan.setAttribute('title', uploadResult.error);
+              paymentDiv.appendChild(errorSpan);
+            }
           }
+          removeBtn.classList.add('hidden');
+          if (tagsToggleBtn) tagsToggleBtn.classList.add('hidden');
           break;
       }
     }
@@ -845,19 +2070,6 @@
       }
     });
 
-    document.getElementById('addTagBtn').addEventListener('click', () => {
-      const container = document.getElementById('tagsContainer');
-      const newRow = document.createElement('div');
-      newRow.className = 'tag-row';
-      newRow.style.marginTop = '10px';
-      newRow.innerHTML = `
-        <input type="text" placeholder="Tag name" class="tag-name" style="width: 200px;">
-        <input type="text" placeholder="Tag value" class="tag-value" style="width: 300px;">
-        <button onclick="this.parentElement.remove()" class="btn-secondary" style="padding: 8px 12px; font-size: 14px; background: rgba(254, 2, 48, 0.1) !important; border: 1px solid var(--turbo-red) !important; color: var(--turbo-red) !important;">Remove</button>
-      `;
-      container.appendChild(newRow);
-    });
-
     // MetaMask signer for arbundles (used in signed mode)
     class MetaMaskSigner {
       constructor(ethersSigner, address) {
@@ -878,7 +2090,7 @@
           const publicKeyHex = recoveredPublicKey.slice(2);
           const bytes = new Uint8Array(publicKeyHex.length / 2);
           for (let i = 0; i < publicKeyHex.length; i += 2) {
-            bytes[i / 2] = parseInt(publicKeyHex.substr(i, 2), 16);
+            bytes[i / 2] = parseInt(publicKeyHex.substring(i, i + 2), 16);
           }
           this.publicKey = bytes;
           log(`✅ Session authorized for data signing (public key: ${this.publicKey.length} bytes)`, 'success');
@@ -915,16 +2127,15 @@
           uploadData = fileData;
           contentType = file.type || 'application/octet-stream';
 
-          // Collect custom tags as headers
-          const tagRows = document.querySelectorAll('.tag-row');
-          tagRows.forEach(row => {
-            const nameInput = row.querySelector('.tag-name');
-            const valueInput = row.querySelector('.tag-value');
-            if (nameInput && valueInput && nameInput.value.trim() && valueInput.value.trim()) {
-              const headerName = `X-Tag-${nameInput.value.trim().replace(/\s+/g, '-')}`;
-              customHeaders[headerName] = valueInput.value.trim();
-            }
+          // Collect custom tags as headers from per-file tags
+          const fileTags = getFileTags(fileIndex);
+          fileTags.forEach(tag => {
+            const headerName = `X-Tag-${tag.name.replace(/\s+/g, '-')}`;
+            customHeaders[headerName] = tag.value;
           });
+          if (fileTags.length > 0) {
+            log(`${prefix} Added ${fileTags.length} custom tag(s)`, 'info');
+          }
         } else {
           // SIGNED DATA ITEM MODE
           log(`${prefix} Mode: Signed Data Item`, 'info');
@@ -935,15 +2146,14 @@
             { name: 'File-Name', value: file.name }
           ];
 
-          // Add custom tags
-          const tagRows = document.querySelectorAll('.tag-row');
-          tagRows.forEach(row => {
-            const nameInput = row.querySelector('.tag-name');
-            const valueInput = row.querySelector('.tag-value');
-            if (nameInput && valueInput && nameInput.value.trim() && valueInput.value.trim()) {
-              tags.push({ name: nameInput.value.trim(), value: valueInput.value.trim() });
-            }
+          // Add custom tags from per-file tags
+          const fileTags = getFileTags(fileIndex);
+          fileTags.forEach(tag => {
+            tags.push({ name: tag.name, value: tag.value });
           });
+          if (fileTags.length > 0) {
+            log(`${prefix} Added ${fileTags.length} custom tag(s)`, 'info');
+          }
 
           const dataItem = window.arbundles.createData(fileData, dataSigner, { tags });
           log(`${prefix} Signing data item (approve in MetaMask)...`, 'info');
@@ -953,16 +2163,16 @@
           log(`${prefix} Data item signed! ID: ${await dataItem.id}`, 'success');
         }
 
-        // Try upload first (with 5 minute timeout for large files)
-        log(`${prefix} Attempting upload...`, 'info');
-        const uploadTimeout = 300000; // 5 minutes
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), uploadTimeout);
-
         // Use mode-specific x402 endpoints
         const uploadEndpoint = currentMode === 'raw'
           ? `${uploadUrl}/v1/x402/upload/unsigned`
           : `${uploadUrl}/v1/x402/upload/signed`;
+
+        // Try upload first (with 5 minute timeout for large files)
+        log(`${prefix} Attempting upload to ${uploadEndpoint}...`, 'info');
+        const uploadTimeout = 300000; // 5 minutes
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), uploadTimeout);
 
         let uploadResponse;
         try {
@@ -1013,6 +2223,12 @@
           paidUsdcAmount = amount;
           log(`${prefix} Payment required: ${amount} USDC`, 'warning');
 
+          // Warn about Mini App limitations for signTypedData
+          if (isMiniApp) {
+            log(`${prefix} ⚠️ Mini App detected - signTypedData may not be supported`, 'warning');
+            log(`${prefix} If payment fails, you'll need to pre-purchase credits via credit card`, 'info');
+          }
+
           const currentTime = Math.floor(Date.now() / 1000);
           const validAfter = currentTime - 3600;
           const timeoutSeconds = requirements.maxTimeoutSeconds || 3600;
@@ -1048,9 +2264,23 @@
             ],
           };
 
-          log(`${prefix} Signing payment authorization (approve in MetaMask)...`, 'warning');
-          const signature = await signer.signTypedData(domain, types, authorization);
-          log(`${prefix} Payment authorized!`, 'success');
+          log(`${prefix} Signing payment authorization...`, 'warning');
+
+          let signature;
+          try {
+            signature = await signer.signTypedData(domain, types, authorization);
+            log(`${prefix} Payment authorized!`, 'success');
+          } catch (signError) {
+            // Handle signTypedData failure (common in Mini App)
+            if (isMiniApp) {
+              throw new Error(
+                `Payment signing failed in Mini App. signTypedData is not yet supported. ` +
+                `Please pre-purchase credits via credit card at turbo.ar.io first. ` +
+                `Required: ${amount} USDC worth of credits.`
+              );
+            }
+            throw signError;
+          }
 
           const paymentPayload = {
             x402Version: 1,
@@ -1062,7 +2292,7 @@
           const paymentHeader = btoa(JSON.stringify(paymentPayload));
 
           // Retry upload with payment (with 5 minute timeout for large files)
-          log(`${prefix} Retrying upload with payment...`, 'info');
+          log(`${prefix} Retrying upload with payment to ${uploadEndpoint}...`, 'info');
           const retryController = new AbortController();
           const retryTimeoutId = setTimeout(() => retryController.abort(), uploadTimeout);
 
@@ -1183,9 +2413,9 @@
 
         // Update file status based on result
         if (result.success) {
-          updateFileStatus(i, 'success', result.id);
+          updateFileStatus(i, 'success', result);
         } else {
-          updateFileStatus(i, 'failed', result.error);
+          updateFileStatus(i, 'failed', result);
         }
       }
 
@@ -1211,7 +2441,7 @@
 
       const resultsHtml = `
         <div class="batch-results">
-          <h3>📊 Batch Upload Complete</h3>
+          <h3>📊 Upload Complete</h3>
           <div class="batch-summary">
             <div class="batch-summary-item">
               <span style="color: var(--turbo-green);">✅ ${successCount} successful</span>
@@ -1243,6 +2473,7 @@
       document.getElementById('fileList').innerHTML = '';
       selectedFiles = [];
       uploadResults = [];
+      fileTags = {}; // Clear all tags
       document.getElementById('uploadBtn').disabled = true;
       log('Ready for new upload', 'info');
     }
