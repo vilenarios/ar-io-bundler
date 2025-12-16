@@ -136,13 +136,39 @@ components:
         4. Server verifies signature, settles USDC transfer, processes upload
         5. Server returns receipt with x402Payment object and X-Payment-Response header
 
-        **Requirements:**
-        - Must be base64-encoded JSON with x402Version, scheme, network, and payload
-        - Payload must contain EIP-3009 authorization: from, to, value, validAfter, validBefore, nonce
-        - Payload must contain EIP-712 signature of the authorization
-        - Content-Length header MUST be present (for fraud detection)
+        **Decoded Structure (see X402PaymentHeader schema):**
+        ```json
+        {
+          "x402Version": 1,
+          "scheme": "exact",
+          "network": "base",
+          "payload": {
+            "signature": "0x...(EIP-712 signature)...",
+            "authorization": {
+              "from": "0xPayerAddress",
+              "to": "0xBundlerPaymentAddress",
+              "value": "30490",
+              "validAfter": 0,
+              "validBefore": 1735689600,
+              "nonce": "0x...(32 bytes hex)..."
+            }
+          }
+        }
+        ```
 
-        **Supported Networks:** base-sepolia, base-mainnet
+        **Creating the Header:**
+        ```javascript
+        const payload = { x402Version: 1, scheme: "exact", network: "base", payload: {...} };
+        const xPayment = Buffer.from(JSON.stringify(payload)).toString("base64");
+        headers["X-PAYMENT"] = xPayment;
+        ```
+
+        **Requirements:**
+        - Content-Length header MUST be present when using X-PAYMENT
+        - Authorization value must match or exceed the 402 response's maxAmountRequired
+        - Nonce must be unique (32-byte random hex string)
+
+        **Supported Networks:** base, base-sepolia, ethereum-mainnet, polygon-mainnet
 
         **Standards:**
         - x402 Protocol: https://github.com/coinbase/x402
@@ -151,7 +177,7 @@ components:
       schema:
         type: string
         format: byte
-        example: "eyJ4NDAyVmVyc2lvbiI6MSwic2NoZW1lIjoiZXhhY3QiLCJuZXR3b3JrIjoiYmFzZS1zZXBvbGlhIiwicGF5bG9hZCI6eyJzaWduYXR1cmUiOiIweDEyMy4uLiIsImF1dGhvcml6YXRpb24iOnsiZnJvbSI6IjB4YWJjLi4uIiwidG8iOiIweGRlZi4uLiIsInZhbHVlIjoiMTAwMDAwMCIsInZhbGlkQWZ0ZXIiOjAsInZhbGlkQmVmb3JlIjoxNzM1Njg5NjAwLCJub25jZSI6IjB4MTIzLi4uIn19fQ=="
+        example: "eyJ4NDAyVmVyc2lvbiI6MSwic2NoZW1lIjoiZXhhY3QiLCJuZXR3b3JrIjoiYmFzZSIsInBheWxvYWQiOnsic2lnbmF0dXJlIjoiMHgxMjM0NTY3ODkwYWJjZGVmLi4uIiwiYXV0aG9yaXphdGlvbiI6eyJmcm9tIjoiMHg3NDJkMzVDYzY2MzRDMDUzMjkyNWEzYjg0NEJjOWU3NTk1ZjBiRWIwIiwidG8iOiIweENGZDNmOTk2NDQ3YTU0MUNiZmJhNTQyMjMxMEVEYjQxN2Q5ZjJjRTYiLCJ2YWx1ZSI6IjMwNDkwIiwidmFsaWRBZnRlciI6MCwidmFsaWRCZWZvcmUiOjE3MzU2ODk2MDAsIm5vbmNlIjoiMHgxMjM0NTY3ODkwYWJjZGVmMTIzNDU2Nzg5MGFiY2RlZjEyMzQ1Njc4OTBhYmNkZWYxMjM0NTY3ODkwYWJjZGVmIn19fQ=="
 
     x-tag-custom:
       name: X-Tag-*
@@ -638,6 +664,222 @@ components:
                 version:
                   type: string
                   example: "2"
+    RawDataUploadResponse:
+      type: object
+      description: |
+        Response for raw data uploads via /x402/upload/unsigned endpoint.
+
+        **Key differences from signed uploads:**
+        - `owner` is the bundler's server wallet (signs the ANS-104 data item)
+        - `payer` is the Ethereum address that paid via x402 (tracked in Payer-Address tag)
+        - `receipt` contains the signed receipt with cryptographic proof
+      required:
+        - id
+        - owner
+        - payer
+        - dataCaches
+        - fastFinalityIndexes
+        - receipt
+        - x402Payment
+      properties:
+        id:
+          type: string
+          description: The Arweave data item ID (base64url encoded, 43 characters)
+          example: "rNephs2z5BAAUlmZm_TGwQjz4TiMr6HoZNyBO3eLctA"
+        owner:
+          type: string
+          description: |
+            The Arweave wallet address that signed the data item.
+            For raw uploads, this is the bundler's server wallet (RAW_DATA_ITEM_JWK).
+          example: "jHGQATyLh_yBNKwqPmU-y6qV98q-AB48fIWUiFOSJAA"
+        payer:
+          type: string
+          description: |
+            The Ethereum address that paid for this upload via x402.
+            This address is recorded in the Payer-Address tag on the data item.
+          example: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0"
+        dataCaches:
+          type: array
+          description: Arweave data caches the data item has been posted to
+          items:
+            type: string
+          example: ["arweave.net"]
+        fastFinalityIndexes:
+          type: array
+          description: Arweave fast finality indexes the data item has been posted to
+          items:
+            type: string
+          example: ["arweave.net"]
+        receipt:
+          type: object
+          description: |
+            Signed receipt providing cryptographic proof of upload acceptance.
+            Verify by checking the signature against the public key.
+          required:
+            - id
+            - timestamp
+            - version
+            - deadlineHeight
+            - dataCaches
+            - fastFinalityIndexes
+            - winc
+            - public
+            - signature
+          properties:
+            id:
+              type: string
+              description: Data item ID (matches top-level id)
+              example: "rNephs2z5BAAUlmZm_TGwQjz4TiMr6HoZNyBO3eLctA"
+            timestamp:
+              type: integer
+              description: Unix timestamp in milliseconds when receipt was signed
+              example: 1700590909589
+            version:
+              type: string
+              description: Receipt format version
+              example: "0.2.0"
+            deadlineHeight:
+              type: integer
+              description: Arweave block height by which data item must be posted
+              example: 1310000
+            dataCaches:
+              type: array
+              items:
+                type: string
+              example: ["arweave.net"]
+            fastFinalityIndexes:
+              type: array
+              items:
+                type: string
+              example: ["arweave.net"]
+            winc:
+              type: string
+              description: Winston credits equivalent of the upload (for accounting)
+              example: "1000000"
+            public:
+              type: string
+              description: Base64url-encoded RSA public key of the signer (bundler wallet)
+              example: "qREovbmD6oxgHYNCzOeTei07lSz0-YLcjnvgSDzqpts..."
+            signature:
+              type: string
+              description: |
+                Base64url-encoded RSA signature of the receipt.
+                Signs: id + version + timestamp + public + deadlineHeight + owner
+              example: "iU_S6uuG1OD8k0XqMGOmbcKfysDckEMUy4R9-ODPXiQj..."
+        x402Payment:
+          type: object
+          description: x402 payment confirmation with blockchain transaction details
+          required:
+            - paymentId
+            - transactionHash
+            - network
+            - mode
+          properties:
+            paymentId:
+              type: string
+              format: uuid
+              description: Unique payment identifier for tracking and reconciliation
+              example: "edd4766e-a053-47f2-88d1-819e72c534dd"
+            transactionHash:
+              type: string
+              description: |
+                Blockchain transaction hash for the USDC transfer.
+                Verify on block explorer (e.g., BaseScan for Base network).
+              example: "0x9c31110e240805d9dfa5853c661f23a258c89f78b8d2e4424a922f9dfd8748f3"
+            network:
+              type: string
+              description: Network where payment was settled
+              enum: [base, base-sepolia, base-mainnet, ethereum-mainnet, polygon-mainnet]
+              example: "base"
+            mode:
+              type: string
+              enum: [payg]
+              description: Payment mode (always "payg" for x402 raw uploads)
+              example: "payg"
+    X402PaymentHeader:
+      type: object
+      description: |
+        Structure of the decoded X-PAYMENT header for x402 payments.
+
+        **Creating the X-PAYMENT header:**
+        1. Create EIP-3009 authorization object
+        2. Sign with EIP-712 typed data
+        3. Combine into payload object
+        4. JSON.stringify and base64 encode
+
+        **EIP-712 Domain (for USDC on Base):**
+        ```javascript
+        {
+          name: "USD Coin",
+          version: "2",
+          chainId: 8453,  // Base mainnet
+          verifyingContract: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+        }
+        ```
+      required:
+        - x402Version
+        - scheme
+        - network
+        - payload
+      properties:
+        x402Version:
+          type: integer
+          description: x402 protocol version (currently 1)
+          example: 1
+        scheme:
+          type: string
+          enum: [exact]
+          description: Payment scheme
+          example: "exact"
+        network:
+          type: string
+          description: Blockchain network for payment
+          example: "base"
+        payload:
+          type: object
+          required:
+            - signature
+            - authorization
+          properties:
+            signature:
+              type: string
+              description: EIP-712 signature of the authorization (hex string with 0x prefix)
+              example: "0x1234567890abcdef..."
+            authorization:
+              type: object
+              description: EIP-3009 TransferWithAuthorization parameters
+              required:
+                - from
+                - to
+                - value
+                - validAfter
+                - validBefore
+                - nonce
+              properties:
+                from:
+                  type: string
+                  description: Payer's Ethereum address
+                  example: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0"
+                to:
+                  type: string
+                  description: Recipient's Ethereum address (bundler's payment address)
+                  example: "0xCFd3f996447a541Cbfba5422310EDb417d9f2cE6"
+                value:
+                  type: string
+                  description: USDC amount in atomic units (6 decimals). "1000000" = 1.00 USDC
+                  example: "30490"
+                validAfter:
+                  type: integer
+                  description: Unix timestamp after which authorization is valid (usually 0)
+                  example: 0
+                validBefore:
+                  type: integer
+                  description: Unix timestamp before which authorization is valid
+                  example: 1735689600
+                nonce:
+                  type: string
+                  description: Unique nonce for replay protection (32-byte hex string)
+                  example: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
 
 paths:
   /:
@@ -1623,45 +1865,88 @@ paths:
     post:
       summary: Posts raw data with x402 payment (bundler creates ANS-104 wrapper)
       description: |
-        **x402-Specific Upload Endpoint for Raw Data**
+        **x402-Specific Upload Endpoint for Raw Data (Server-Signed)**
 
-        This endpoint accepts raw data (images, files, etc.) and the bundler creates and signs
-        the ANS-104 data item wrapper. It processes x402 USDC payments.
+        This endpoint accepts raw data (images, files, text, etc.) and the bundler creates and signs
+        the ANS-104 data item wrapper server-side. Payment is via x402 USDC.
 
-        **Use Case:** Simple clients (AI agents, apps) that don't want to create ANS-104 data items.
+        **Use Case:** AI agents, simple apps, and clients that don't want to implement ANS-104 signing.
 
-        **Payment Flow:**
-        1. Client uploads raw data without X-PAYMENT header → Server returns 402 Payment Required
-        2. Server response includes x402 payment requirements (USDC amount includes ANS-104 overhead)
-        3. Client creates EIP-3009 authorization and signs with EIP-712
-        4. Client retries upload with X-PAYMENT header (base64-encoded JSON)
-        5. Server verifies payment, creates ANS-104 wrapper, signs with bundler key
-        6. Server returns receipt with x402Payment object and 7 system tags
+        ---
 
-        **System Tags Automatically Added:**
-        - Bundler: AR.IO Bundler name
-        - Upload-Type: "raw-data-x402"
-        - Payer-Address: Ethereum address that paid
-        - X402-TX-Hash: Blockchain transaction hash
-        - X402-Payment-ID: UUID for tracking
-        - X402-Network: Payment network (e.g., "base")
-        - Upload-Timestamp: Unix timestamp
-        - Content-Type: MIME type (if provided)
+        ## Payment Flow
 
-        **Custom Tags:**
-        Use X-TAG-* headers to add custom tags (e.g., X-TAG-App-Name: MyApp)
+        ```
+        1. POST raw data (no X-PAYMENT header)
+           ↓
+        2. Server returns 402 with payment requirements
+           ↓
+        3. Client creates EIP-3009 authorization + EIP-712 signature
+           ↓
+        4. POST raw data WITH X-PAYMENT header
+           ↓
+        5. Server: verify → settle USDC → create data item → store → return receipt
+        ```
 
-        **Requirements:**
-        - Content-Length: Required (for fraud detection)
-        - Content-Type: Optional (e.g., image/png) - adds Content-Type tag
-        - X-PAYMENT: Required for x402 payment authorization (after 402 response)
-        - X-TAG-*: Optional custom tags (max 100 tags)
+        ---
 
-        **Supported Networks:**
-        - base (Base mainnet) - Default, enabled
-        - base-sepolia (Base Sepolia testnet) - Requires X402_BASE_TESTNET_ENABLED=true
-        - ethereum-mainnet - Requires X402_ETH_ENABLED=true
-        - polygon-mainnet - Requires X402_POLYGON_ENABLED=true
+        ## Pricing
+
+        **Formula:**
+        ```
+        estimatedSize = rawDataSize + 512 (signature) + 512 (owner) + 80 (headers) + (totalTags × 64)
+        winstonCost = arweaveGateway.getPrice(estimatedSize)
+        usdcAmount = (winstonCost / 10^12) × arPriceUSD × 10^6 × (1 + feePercent/100)
+        ```
+
+        **Fee:** Configurable via X402_PRICING_BUFFER_PERCENT (default: 15%)
+
+        **Get price quote first:** `GET /v1/price/x402/data/{token}/{byteCount}?tags={n}&contentType={mime}`
+
+        ---
+
+        ## System Tags (Automatically Added)
+
+        | Tag | Description | Example |
+        |-----|-------------|---------|
+        | Bundler | Service name | "AR.IO Bundler" |
+        | Upload-Type | Upload method | "raw-data-x402" |
+        | Payer-Address | Ethereum payer | "0x742d35Cc..." |
+        | X402-TX-Hash | Blockchain tx | "0x9c31110e..." |
+        | X402-Payment-ID | Tracking UUID | "edd4766e-..." |
+        | X402-Network | Payment network | "base" |
+        | Upload-Timestamp | Unix ms | "1700590909589" |
+        | Content-Type | MIME type | "image/png" |
+
+        ---
+
+        ## Custom Tags
+
+        **Via Headers:** `X-Tag-App-Name: MyApp` → `{"name": "App-Name", "value": "MyApp"}`
+
+        **Via JSON Envelope:** `{"data": "...", "tags": [{"name": "App-Name", "value": "MyApp"}]}`
+
+        Note: Header tag names are converted from kebab-case to Proper-Case.
+
+        ---
+
+        ## Important Notes
+
+        - **Ownership:** The `owner` field is the bundler's server wallet. The payer's address is recorded in the `Payer-Address` tag only.
+        - **Server Requirement:** Requires `RAW_DATA_UPLOADS_ENABLED=true` on server
+        - **Max Size:** 10 GB
+        - **Max Tags:** 100 user tags
+
+        ---
+
+        ## Supported Networks
+
+        | Network | Token | Status | USDC Contract |
+        |---------|-------|--------|---------------|
+        | Base mainnet | usdc-base | Default | 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 |
+        | Base Sepolia | usdc-base-sepolia | Requires env | 0x036CbD53842c5426634e7929541eC2318f3dCF7e |
+        | Ethereum | usdc-ethereum-mainnet | Requires env | 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 |
+        | Polygon | usdc-polygon-mainnet | Requires env | 0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359 |
       tags:
         - Upload
       parameters:
@@ -1691,9 +1976,29 @@ paths:
               value: "1.0.0"
       requestBody:
         required: true
-        description: Raw binary data (image, file, etc.)
+        description: |
+          Raw data to upload. Supports two formats:
+
+          **1. Binary Upload (Recommended for files)**
+          - Content-Type: application/octet-stream, image/png, application/pdf, etc.
+          - Body: Raw binary data
+          - Custom tags via X-Tag-* headers
+
+          **2. JSON Envelope (Alternative for programmatic use)**
+          - Content-Type: application/json
+          - Body: `{"data": "<base64>", "contentType": "...", "tags": [...]}`
+          - Useful when headers are difficult to set (e.g., some HTTP clients)
         content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+              description: Raw binary data (use X-Tag-* headers for custom tags)
           image/png:
+            schema:
+              type: string
+              format: binary
+          image/jpeg:
             schema:
               type: string
               format: binary
@@ -1701,13 +2006,72 @@ paths:
             schema:
               type: string
               format: binary
-          application/octet-stream:
+          text/plain:
             schema:
               type: string
               format: binary
+          application/json:
+            schema:
+              type: object
+              description: |
+                JSON envelope format for raw data uploads.
+                Use this when you can't easily set X-Tag-* headers.
+              required:
+                - data
+              properties:
+                data:
+                  type: string
+                  format: byte
+                  description: Base64-encoded raw data
+                  example: "SGVsbG8gV29ybGQh"
+                contentType:
+                  type: string
+                  description: MIME type of the data (adds Content-Type tag)
+                  example: "image/png"
+                tags:
+                  type: array
+                  description: Custom tags to add to the data item (max 100)
+                  items:
+                    type: object
+                    required:
+                      - name
+                      - value
+                    properties:
+                      name:
+                        type: string
+                        description: Tag name
+                        example: "App-Name"
+                      value:
+                        type: string
+                        description: Tag value
+                        example: "MyApp"
+            examples:
+              SimpleText:
+                summary: Simple text upload
+                value:
+                  data: "SGVsbG8gV29ybGQh"
+                  contentType: "text/plain"
+              WithTags:
+                summary: Upload with custom tags
+                value:
+                  data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+                  contentType: "image/png"
+                  tags:
+                    - name: "App-Name"
+                      value: "MyApp"
+                    - name: "App-Version"
+                      value: "1.0.0"
       responses:
-        "200":
-          description: The receipt of the uploaded data item (bundler-signed)
+        "201":
+          description: |
+            The raw data was successfully uploaded and wrapped in an ANS-104 data item.
+
+            **Response includes:**
+            - `id`: The data item ID (Arweave transaction ID)
+            - `owner`: Server's raw data item wallet address (signs the data item)
+            - `payer`: Ethereum address that paid via x402 (tracked in Payer-Address tag)
+            - `receipt`: Signed receipt object with cryptographic proof
+            - `x402Payment`: Payment confirmation with blockchain transaction hash
           headers:
             X-Payment-Response:
               schema:
@@ -1722,21 +2086,29 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/DataItemPost"
+                $ref: "#/components/schemas/RawDataUploadResponse"
               examples:
                 RawDataUpload:
                   summary: Raw data upload with x402 payment
                   value:
                     id: "rNephs2z5BAAUlmZm_TGwQjz4TiMr6HoZNyBO3eLctA"
-                    timestamp: 1700590909589
-                    version: "1.0.0"
                     owner: "jHGQATyLh_yBNKwqPmU-y6qV98q-AB48fIWUiFOSJAA"
-                    deadlineHeight: 1310000
+                    payer: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0"
                     dataCaches: ["arweave.net"]
                     fastFinalityIndexes: ["arweave.net"]
+                    receipt:
+                      id: "rNephs2z5BAAUlmZm_TGwQjz4TiMr6HoZNyBO3eLctA"
+                      timestamp: 1700590909589
+                      version: "0.2.0"
+                      deadlineHeight: 1310000
+                      dataCaches: ["arweave.net"]
+                      fastFinalityIndexes: ["arweave.net"]
+                      winc: "1000000"
+                      public: "qREovbmD6oxgHYNCzOeTei07lSz0-YLcjnvgSDzqpts..."
+                      signature: "iU_S6uuG1OD8k0XqMGOmbcKfysDckEMUy4R9-ODPXiQj..."
                     x402Payment:
                       paymentId: "edd4766e-a053-47f2-88d1-819e72c534dd"
-                      txHash: "0x9c31110e240805d9dfa5853c661f23a258c89f78b8d2e4424a922f9dfd8748f3"
+                      transactionHash: "0x9c31110e240805d9dfa5853c661f23a258c89f78b8d2e4424a922f9dfd8748f3"
                       network: "base"
                       mode: "payg"
         "402":

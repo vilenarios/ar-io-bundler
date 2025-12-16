@@ -6,160 +6,82 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is the **AR.IO Bundler** - a complete ANS-104 data bundling platform for Arweave with AR.IO Gateway integration. It consists of two primary microservices (Payment Service and Upload Service) that work together to accept data uploads, manage payments, bundle data items, and post them to the Arweave network.
 
-**Monorepo Structure**: This is a Yarn 3 workspace monorepo with:
+**Monorepo Structure**: Yarn 3 workspace monorepo with:
 - `packages/payment-service/` - Payment processing and credit management
 - `packages/upload-service/` - Data upload handling and bundling
+- `packages/admin-service/` - Bull Board queue monitoring dashboard
 - `packages/shared/` - Shared types and utilities (minimal)
 
-**IMPORTANT**: Each service has its own detailed `CLAUDE.md` file. Consult those for service-specific implementation details:
-- `packages/payment-service/CLAUDE.md` - Payment service architecture and commands
-- `packages/upload-service/CLAUDE.md` - Upload service architecture and commands
+**Service-specific CLAUDE.md files** contain detailed implementation guidance:
+- `packages/payment-service/CLAUDE.md` - Payment service architecture, x402, Stripe, crypto payments
+- `packages/upload-service/CLAUDE.md` - Upload service architecture, bundling, jobs, multipart
 
 ## ⚠️ CRITICAL: Service Restart Protocol
 
 **NEVER use `pm2 restart` directly! ALWAYS use these scripts:**
 
 ```bash
-# Stop services only (keeps Docker running)
-./scripts/stop.sh --services-only
-
-# Start all services
-./scripts/start.sh
-
-# Restart services only (convenience)
-./scripts/restart.sh
-
-# Restart everything including Docker
-./scripts/restart.sh --with-docker
+./scripts/stop.sh --services-only  # Stop PM2 only (keeps Docker running)
+./scripts/start.sh                  # Start everything (Docker + PM2)
+./scripts/restart.sh                # Restart PM2 services only
+./scripts/restart.sh --with-docker  # Restart everything including Docker
+./scripts/verify.sh                 # Verify system health
 ```
 
-**Why this matters:**
-- Scripts ensure proper environment variable loading
-- Scripts verify infrastructure health before starting
-- Scripts check builds are up to date
-- Scripts provide clear status output
-- `pm2 restart` can lead to stale code or environment issues
+**Why**: Scripts ensure proper environment variable loading, verify infrastructure health, check builds are up to date, and provide clear status output. Direct `pm2 restart` can lead to stale code or environment issues.
 
-**When rebuilding code:**
+**Rebuild workflow**:
 ```bash
-# Correct workflow
 cd packages/payment-service && yarn build
-./scripts/stop.sh --services-only
-./scripts/start.sh
-
-# WRONG - do not use
-pm2 restart payment-service  # ❌ May use stale env vars
+./scripts/stop.sh --services-only && ./scripts/start.sh
 ```
 
 ## Common Commands
 
-### Development Setup
+### Development
 ```bash
-# Initial setup
-yarn install
-cp packages/upload-service/.env.sample packages/upload-service/.env
-# Edit .env with your configuration (TURBO_JWK_FILE, PRIVATE_ROUTE_SECRET, etc.)
-
-# Start infrastructure
-docker compose up -d
-
-# Run database migrations for both services
-yarn db:migrate
-
-# Build all packages
-yarn build
-```
-
-### Running Services
-
-**Production Mode** (Recommended - Uses convenience scripts):
-```bash
-# Start EVERYTHING (Docker + PM2 services)
-./scripts/start.sh
-
-# Verify system health (run after startup)
-./scripts/verify.sh
-
-# Stop EVERYTHING (PM2 + Docker)
-./scripts/stop.sh
-
-# Stop PM2 only, keep Docker running
-./scripts/stop.sh --services-only
-
-# Restart PM2 services only
-./scripts/restart.sh
-
-# Restart EVERYTHING including Docker
-./scripts/restart.sh --with-docker
-```
-
-**Development Mode** (separate terminals):
-```bash
-yarn dev:payment    # Terminal 1: Payment service with hot reload
-yarn dev:upload     # Terminal 2: Upload service with hot reload
-```
-
-**Manual PM2 Control** (if needed):
-```bash
-pm2 start infrastructure/pm2/ecosystem.config.js
-pm2 logs            # View logs
-pm2 monit           # Monitor processes
-pm2 stop all        # Stop all services
-pm2 delete all      # Remove from PM2
+yarn install                    # Install dependencies
+yarn build                      # Build all packages
+yarn dev:payment                # Payment service with hot reload
+yarn dev:upload                 # Upload service with hot reload
+docker compose up -d            # Start infrastructure
+yarn db:migrate                 # Run all migrations
 ```
 
 ### Testing
 ```bash
-# Run all unit tests across both services
-yarn test:unit
-
-# Service-specific tests
-yarn test:payment
-yarn test:upload
-
-# Integration tests (requires running infrastructure)
-yarn workspace @ar-io-bundler/payment-service test:integration:local
-yarn workspace @ar-io-bundler/upload-service test:integration:local
+yarn test:unit                  # All unit tests
+yarn test:payment               # Payment service tests
+yarn test:upload                # Upload service tests
+yarn workspace @ar-io-bundler/payment-service test:integration:local    # Integration tests
+yarn workspace @ar-io-bundler/payment-service test:integration:local -g "Router"  # Specific tests
 ```
 
-### Database Operations
+### Database
 ```bash
-# Run migrations for both services
-yarn db:migrate
-
-# Service-specific migrations
-yarn db:migrate:payment
-yarn db:migrate:upload
-
-# Create new migration
+yarn db:migrate                 # Migrate both databases
+yarn db:migrate:payment         # Payment service only
+yarn db:migrate:upload          # Upload service only
 yarn workspace @ar-io-bundler/payment-service db:migrate:new MIGRATION_NAME
-yarn workspace @ar-io-bundler/upload-service db:migrate:new MIGRATION_NAME
-```
-
-### Infrastructure
-```bash
-docker compose up -d        # Start all infrastructure
-docker compose down         # Stop all infrastructure
-docker compose logs -f      # View infrastructure logs
-docker compose restart      # Restart infrastructure
-
-# Access services
-curl http://localhost:3001/v1/info  # Upload service
-curl http://localhost:4001/v1/info  # Payment service
-open http://localhost:3002/admin/queues  # Bull Board (queue dashboard)
 ```
 
 ### Code Quality
 ```bash
-yarn lint           # Lint all packages
-yarn lint:fix       # Fix linting issues
-yarn format         # Format all code
-yarn typecheck      # TypeScript type checking
+yarn lint && yarn lint:fix      # Lint
+yarn format                     # Format
+yarn typecheck                  # Type check
+```
+
+### Infrastructure
+```bash
+docker compose up -d            # Start PostgreSQL, Redis, MinIO
+docker compose logs -f          # View logs
+curl http://localhost:3001/v1/info  # Upload service health
+curl http://localhost:4001/v1/info  # Payment service health
+open http://localhost:3002/admin/queues  # Bull Board dashboard
 ```
 
 ## High-Level Architecture
-
-### System Components
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -178,214 +100,92 @@ yarn typecheck      # TypeScript type checking
 ### Service Responsibilities
 
 **Payment Service** (`packages/payment-service/`):
-- Manages user balances (Winston credits)
-- Processes cryptocurrency payments (Arweave, Ethereum, Solana, Matic, KYVE, Base-ETH)
-- Handles Stripe credit card payments
-- Manages ArNS (Arweave Name System) purchases
-- Provides balance reservation/refund for uploads
-- Tracks payment receipts and audit logs
+- User balances (Winston credits), cryptocurrency payments (Arweave, Ethereum, Solana, Matic, KYVE, Base-ETH)
+- Stripe credit card payments, ArNS purchases
+- x402 protocol (Coinbase HTTP 402 with USDC)
+- Balance reservation/refund for uploads
 
 **Upload Service** (`packages/upload-service/`):
-- Accepts single and multipart data item uploads (up to 10GB)
-- Verifies balances with payment service before accepting uploads
-- Manages asynchronous job processing via BullMQ (11 queues)
-- Bundles data items using ANS-104 standard
-- Posts bundles to Arweave network
-- Integrates with AR.IO Gateway for optimistic caching (optical posting)
-- Unbundles nested bundle data items (BDIs)
-- Tracks data item offsets for retrieval
+- Single and multipart data item uploads (up to 10GB)
+- Asynchronous job processing via BullMQ (11 queues)
+- ANS-104 bundle creation and Arweave posting
+- AR.IO Gateway optimistic caching (optical posting)
+
+**Admin Service** (`packages/admin-service/`):
+- Bull Board queue monitoring at port 3002
+- System statistics and bundler metrics
 
 ### Dependency Injection Pattern
 
-Both services use a centralized `Architecture` interface pattern for dependency injection:
+Both services use a centralized `Architecture` interface injected into Koa middleware context:
 
-**Payment Service** (`src/architecture.ts:24`):
 ```typescript
+// Payment Service (src/architecture.ts)
 interface Architecture {
   paymentDatabase: Database;
   pricingService: PricingService;
   stripe: Stripe;
-  emailProvider?: EmailProvider;
   gatewayMap: GatewayMap;
+  x402Service: X402Service;
 }
-```
 
-**Upload Service** (`src/arch/architecture.ts`):
-```typescript
+// Upload Service (src/arch/architecture.ts)
 interface Architecture {
-  database: Database;
   objectStore: ObjectStore;
-  cacheService: CacheService;
+  database: Database;
   paymentService: PaymentService;
+  x402Service: X402Service;
   arweaveGateway: ArweaveGateway;
-  logger: winston.Logger;
-  getArweaveWallet: () => JWKInterface;
-  tracer?: Tracer;
+  getArweaveWallet: () => Promise<JWKInterface>;
 }
 ```
-
-This architecture object is injected into Koa middleware context, making dependencies available to all route handlers.
 
 ### Inter-Service Communication
 
-- Upload service calls payment service for balance checks and adjustments
+- Upload service calls payment service for balance checks/adjustments
 - Authentication via JWT tokens with `PRIVATE_ROUTE_SECRET`
 - Circuit breaker pattern (opossum) for resilience
-- Payment service exposes balance operations at private routes
 
-### Vertical Integration with AR.IO Gateway
+### Asynchronous Job Processing
 
-The bundler can be **vertically integrated** with a local AR.IO Gateway for complete independence from external services:
-
-**Benefits:**
-- All pricing uses YOUR local gateway (not arweave.net)
-- Bundle posting goes to YOUR gateway
-- Faster performance (local network calls)
-- No external dependencies except CoinGecko (for x402 USD conversion only)
-- Full control over gateway behavior and data
-
-**Configuration** (in both service `.env` files):
-```bash
-ARWEAVE_GATEWAY=http://localhost:3000
-PUBLIC_ACCESS_GATEWAY=http://localhost:3000
-OPTICAL_BRIDGING_ENABLED=true
-OPTICAL_BRIDGE_URL=http://localhost:4000/ar-io/admin/queue-data-item
-AR_IO_ADMIN_KEY=<your-ar-io-admin-key>
-```
-
-**Port Allocation**: AR.IO Gateway uses ports 3000 (Envoy), 4000 (Core), 5050 (Observer). Bundler services use 3001 (Upload) and 4001 (Payment) to avoid conflicts.
-
-See `VERTICALLY_INTEGRATED_STATUS.md` for complete integration details.
-
-### Asynchronous Job Processing (Upload Service)
-
-The upload service uses BullMQ with 11 queues for asynchronous fulfillment:
+BullMQ with 11 queues for bundle fulfillment:
 
 **Job Flow**: `upload → newDataItem → planBundle → prepareBundle → postBundle → verifyBundle`
+**Parallel jobs**: `opticalPost`, `putOffsets`, `cleanupFs`
 
-Parallel jobs: `opticalPost`, `putOffsets`, `cleanupFs`
+**Workers**: PM2-managed in `packages/upload-service/src/workers/allWorkers.ts` (fork mode - single instance)
 
-**Workers**: PM2-managed workers in `packages/upload-service/src/workers/allWorkers.ts`
-- 11 worker types with configurable concurrency
-- Fork mode execution (single instance to avoid duplicate processing)
-- Graceful shutdown with job completion
-
-**Monitoring**: Bull Board at `http://localhost:3002/admin/queues`
-
-**CRITICAL: Bundle Planning Requires Cron Job**
-
-The bundling pipeline needs periodic triggering to group uploaded data items. Without this, uploads will remain unbundled:
-
+**CRITICAL: Bundle planning requires cron job**:
 ```bash
 # Add to crontab (runs every 5 minutes)
-cd /home/vilenarios/ar-io-bundler/packages/upload-service
-(crontab -l 2>/dev/null | grep -v "trigger-plan" ; echo "*/5 * * * * /home/vilenarios/ar-io-bundler/packages/upload-service/cron-trigger-plan.sh >> /tmp/bundle-plan-cron.log 2>&1") | crontab -
-
-# Verify
-crontab -l | grep trigger-plan
+(crontab -l 2>/dev/null | grep -v "trigger-plan" ; echo "*/5 * * * * /path/to/packages/upload-service/cron-trigger-plan.sh >> /tmp/bundle-plan-cron.log 2>&1") | crontab -
 ```
-
-The cron job triggers the plan worker to fetch pending data items, group them into bundles, and queue prepare → post → verify jobs.
 
 ### Database Architecture
 
-**Two Separate PostgreSQL Databases**:
-- `payment_service` - User accounts, payments, balances, receipts, ArNS purchases
+**Two separate PostgreSQL databases**:
+- `payment_service` - Users, payments, balances, receipts
 - `upload_service` - Data items, bundles, multipart uploads, offsets
 
-**Migrations**: Knex.js migrations in `src/migrations/` for each service
-
-**Important Migration Pattern**:
-1. Add migration logic to service's migrator file (e.g., `src/arch/db/migrator.ts` for upload service)
-2. Generate migration file: `yarn db:migrate:new MIGRATION_NAME`
-3. Update generated migration to call migrator function
+**Migration pattern** (IMPORTANT):
+1. Add migration logic to `src/database/schema.ts` (payment) or `src/arch/db/migrator.ts` (upload)
+2. Generate migration: `yarn db:migrate:new MIGRATION_NAME`
+3. Update generated file to call your function
 4. Run: `yarn db:migrate:latest`
 
-### Object Storage (MinIO)
+**Never write SQL directly in generated migration files.**
 
-- S3-compatible storage for data items and bundles
-- Two buckets: `raw-data-items`, `backup-data-items`
-- Development: MinIO at `localhost:9000`
-- Production: Can use MinIO or AWS S3 (S3 SDK compatible)
+### Data Cleanup System (Tiered Retention)
 
-### Caching (Redis)
+```
+Data Age      Filesystem    MinIO      Storage
+────────────────────────────────────────────────
+0-7 days      Keep          Keep       Hot + Cold
+7-90 days     DELETE        Keep       Cold only
+90+ days      DELETE        DELETE     Arweave permanent
+```
 
-**Two Redis Instances**:
-- Port 6379: ElastiCache (data item metadata, API caching)
-- Port 6381: BullMQ queues (11 job queues)
-
-## Important Development Patterns
-
-### Testing Strategy
-
-- **Unit tests**: Co-located with source files (`*.test.ts` in `src/`)
-- **Integration tests**: Separate `tests/` directory in each package
-- Use `yarn test:unit` for fast feedback during development
-- Use `yarn test:integration:local` for full integration testing with Docker infrastructure
-- Use `-g "pattern"` to target specific test suites
-
-### Migration Workflow
-
-**IMPORTANT**: Do NOT write migration logic directly in generated migration files.
-
-**Correct Workflow**:
-1. Add static migration function to `src/database/schema.ts` (payment service) or `src/arch/db/migrator.ts` (upload service)
-2. Generate migration: `yarn db:migrate:new MIGRATION_NAME`
-3. Update generated file in `src/migrations/` to call your function
-4. Apply: `yarn db:migrate:latest`
-
-### Environment Configuration
-
-Key variables (see `.env.sample`):
-- `PRIVATE_ROUTE_SECRET` - Inter-service authentication (generate with `openssl rand -hex 32`)
-- `TURBO_JWK_FILE` - Arweave wallet for bundle signing (**MUST be absolute path**)
-- `DB_PASSWORD` - PostgreSQL password
-- `DB_DATABASE` - Database name (`payment_service` or `upload_service` - must match service)
-- `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` - Stripe integration
-- `ARWEAVE_GATEWAY` - Gateway URL (use `http://localhost:3000` for local AR.IO Gateway)
-- `OPTICAL_BRIDGING_ENABLED`, `OPTICAL_BRIDGE_URL`, `AR_IO_ADMIN_KEY` - AR.IO Gateway optimistic caching
-- `ALLOW_LISTED_ADDRESSES` - Comma-separated addresses for free uploads
-- `PAYMENT_SERVICE_BASE_URL` - Upload service → Payment service communication (**NO protocol prefix**, e.g., `localhost:4001`)
-
-**X402 Configuration** (for USDC payments):
-- `X402_PAYMENT_ADDRESS` - Your EVM wallet address for receiving USDC payments
-- `CDP_API_KEY_ID`, `CDP_API_KEY_SECRET` - **REQUIRED for mainnet** - Get from [Coinbase Developer Platform](https://portal.cdp.coinbase.com/)
-- `X402_FACILITATOR_URL_BASE` - Coinbase facilitator URL (mainnet: `https://facilitator.base.coinbasecloud.net`)
-- For testnet development: Set `X402_BASE_TESTNET_ENABLED=true` and use public facilitator `https://x402.org/facilitator` (no CDP credentials needed)
-
-**Fee Configuration**: See `FEE_CONFIGURATION_GUIDE.md` for comprehensive fee structure setup. Default config (`multiply 0.766`) subsidizes uploads at a 23.4% loss - adjust for profitability!
-
-### PM2 Process Management
-
-**Process Configuration** (`infrastructure/pm2/ecosystem.config.js`):
-- `payment-service`: 2 instances (cluster mode)
-- `upload-api`: 2 instances (cluster mode)
-- `upload-workers`: 1 instance (fork mode - IMPORTANT: avoid duplicate job processing)
-- `bull-board`: 1 instance (fork mode)
-
-**Cluster vs Fork**:
-- Cluster mode for APIs: Horizontal scaling across CPU cores
-- Fork mode for workers: Single instance to prevent duplicate job execution
-
-## Migration from AWS
-
-This codebase was completely migrated from AWS to open-source infrastructure:
-
-**Replaced Services**:
-- AWS Secrets Manager → `.env` files
-- AWS Systems Manager → `.env` files
-- Amazon S3 → MinIO
-- Amazon DynamoDB → PostgreSQL
-- Amazon SQS → BullMQ (Redis)
-- AWS Lambda → PM2 Workers
-- Amazon ECS → PM2
-- Amazon ElastiCache → Redis
-
-**Key Changes**:
-- Removed all AWS SDK dependencies
-- DynamoDB batch size (25) → PostgreSQL batch insert (500)
-- Lambda handlers → Worker functions in `src/workers/`
-- All secrets in `.env` (never commit to git)
+Configure via `FILESYSTEM_CLEANUP_DAYS=7` and `MINIO_CLEANUP_DAYS=90`.
 
 ## Port Allocation
 
@@ -394,118 +194,81 @@ This codebase was completely migrated from AWS to open-source infrastructure:
 | Upload API | 3001 | Data upload REST API |
 | Bull Board | 3002 | Queue monitoring dashboard |
 | Payment API | 4001 | Payment processing REST API |
-| AR.IO Gateway | 4000 | AR.IO Gateway (external, optional) |
-| PostgreSQL | 5432 | Database server |
-| Redis Cache | 6379 | ElastiCache/Redis cache |
+| AR.IO Gateway | 4000 | External (optional) |
+| PostgreSQL | 5432 | Database |
+| Redis Cache | 6379 | Application caching |
 | Redis Queues | 6381 | BullMQ job queues |
-| MinIO S3 API | 9000 | Object storage API |
-| MinIO Console | 9001 | Web UI for MinIO |
+| MinIO | 9000/9001 | Object storage API/Console |
 
-## Known Issues and Recent Changes
+## Key Environment Variables
 
-**Recent Major Changes** (November 2025):
-- ✅ **Complete AWS Migration**: All AWS services replaced with open-source alternatives (DynamoDB→PostgreSQL, SQS→BullMQ, Lambda→PM2, S3→MinIO)
-- ✅ **Vertical Integration**: Full integration with local AR.IO Gateway for pricing and bundle posting
-- ✅ **x402 Protocol**: Coinbase HTTP 402 payment standard implementation (see below)
-- ✅ **BullMQ Migration**: Complete transition from AWS Lambda/SQS to PM2-managed BullMQ workers
+See `.env.sample` for full configuration. Critical variables:
 
-**X402 Integration Status** (November 2025):
-- ✅ **Fully implemented and working** - All TypeScript errors resolved
-- ✅ **Core implementation complete** - Database methods, routes, and service layer implemented
-- ✅ **Tests fixed** - All x402 tests now compile and pass type checking
-- ✅ **Payment requirements corrected** - Proper X402PaymentRequirements interface usage
-- ✅ **CDP Authentication** - Coinbase CDP API credentials integrated for mainnet
-- **Status**: Production ready for x402 USDC payment integration
-- Three payment modes supported: PAYG (pay-as-you-go), top-up, and hybrid
-- Implements Coinbase's x402 HTTP 402 standard with EIP-3009 USDC transfers
-- **IMPORTANT**: Mainnet requires Coinbase CDP credentials (`CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`)
-- Testnet works without CDP credentials using public facilitator
-- See `packages/payment-service/X402_IMPLEMENTATION.md` for implementation details
-- Regular payment flows (crypto, Stripe) also work correctly
+```bash
+# Inter-service auth (MUST match in both services)
+PRIVATE_ROUTE_SECRET=<openssl rand -hex 32>
+
+# Arweave wallet (MUST be absolute path)
+TURBO_JWK_FILE=/full/path/to/wallet.json
+
+# Database
+DB_DATABASE=payment_service  # or upload_service
+DB_HOST=localhost DB_PORT=5432 DB_USER=turbo_admin DB_PASSWORD=postgres
+
+# Payment service URL (NO protocol prefix)
+PAYMENT_SERVICE_BASE_URL=localhost:4001
+
+# AR.IO Gateway integration
+ARWEAVE_GATEWAY=http://localhost:3000
+OPTICAL_BRIDGING_ENABLED=true
+OPTICAL_BRIDGE_URL=http://localhost:4000/ar-io/admin/queue-data-item
+AR_IO_ADMIN_KEY=<your-key>
+
+# X402 (USDC payments)
+X402_PAYMENT_ADDRESS=<ethereum-address>
+CDP_API_KEY_ID=<required-for-mainnet>
+CDP_API_KEY_SECRET=<required-for-mainnet>
+```
+
+## PM2 Process Management
+
+Configuration in `infrastructure/pm2/ecosystem.config.js`:
+- `payment-service`: 2 instances, cluster mode
+- `upload-api`: 2 instances, cluster mode
+- `upload-workers`: 1 instance, fork mode (avoid duplicate processing)
+- `admin-dashboard`: 1 instance, fork mode
+
+## Troubleshooting
+
+### Workers Not Processing Uploads
+```bash
+pm2 list | grep upload-workers      # Verify running
+crontab -l | grep trigger-plan      # Check cron
+./cron-trigger-plan.sh              # Manual trigger
+pm2 logs upload-workers --err       # Check errors
+```
+
+### Port Conflicts (EADDRINUSE)
+Start with explicit PORT: `PORT=4001 NODE_ENV=production pm2 start lib/index.js`
+
+### Database Errors
+- Verify `DB_DATABASE` matches service (`payment_service` or `upload_service`)
+- Run migrations: `yarn db:migrate:latest`
+
+### Wallet Not Found
+Use absolute path: `TURBO_JWK_FILE=/full/path/to/wallet.json`
+
+### Service Communication Errors
+- `PAYMENT_SERVICE_BASE_URL=localhost:4001` (NO `http://` prefix)
+- `PRIVATE_ROUTE_SECRET` must match in both `.env` files
 
 ## Technology Stack
 
-- **Language**: TypeScript/Node.js 18+
-- **Package Manager**: Yarn 3.6.0 (workspaces)
-- **Web Framework**: Koa 3.0
-- **Database**: PostgreSQL 16.1 with Knex.js
-- **Cache**: Redis 7.2
-- **Object Storage**: MinIO (S3-compatible)
-- **Job Queue**: BullMQ
-- **Process Manager**: PM2
-- **Testing**: Mocha, Chai
-- **Observability**: Winston (logging), OpenTelemetry (optional), Prometheus (metrics)
-- **Containerization**: Docker Compose
+TypeScript/Node.js 18+ • Yarn 3.6.0 workspaces • Koa 3.0 • PostgreSQL 16.1/Knex.js • Redis 7.2 • MinIO • BullMQ • PM2 • Mocha/Chai • Winston/OpenTelemetry
 
 ## Documentation
 
-- **Root README.md**: Administrator quick setup guide, vertical integration instructions, and troubleshooting
-- **CLAUDE.md** (this file): Repository-wide development guidance and architecture overview
-- **docs/architecture/ARCHITECTURE.md**: Comprehensive architecture documentation (1979 lines)
-- **packages/payment-service/CLAUDE.md**: Payment service implementation details
-- **packages/upload-service/CLAUDE.md**: Upload service implementation details
-- **VERTICALLY_INTEGRATED_STATUS.md**: Complete vertical integration status with AR.IO Gateway
-- **FEE_CONFIGURATION_GUIDE.md**: Comprehensive fee structure configuration guide
-- **docs/setup/**: Installation guides
-- **docs/operations/**: Production deployment and monitoring
-- **docs/api/**: API reference documentation
-- **docs/migration/**: AWS to open-source migration history
-
-## Troubleshooting Common Issues
-
-### Workers Not Processing Uploads
-**Symptom**: Uploads succeed but bundles never get created
-
-**Solution**:
-1. Verify workers running: `pm2 list | grep upload-workers`
-2. Check cron job: `crontab -l | grep trigger-plan`
-3. Manually trigger: `cd packages/upload-service && ./cron-trigger-plan.sh`
-4. Check worker logs: `pm2 logs upload-workers --err --lines 50`
-
-### Port Conflicts (EADDRINUSE)
-**Symptom**: Service fails to start
-
-**Solution**: Always start services with explicit PORT environment variables:
-```bash
-PORT=4001 NODE_ENV=production pm2 start lib/index.js --name payment-service
-PORT=3001 NODE_ENV=production pm2 start lib/server.js --name upload-api
-```
-
-### Database Connection Errors
-**Symptom**: `relation does not exist` or connection errors
-
-**Solution**:
-- Verify `DB_DATABASE` is correct (`payment_service` or `upload_service`)
-- Run migrations: `yarn db:migrate:latest` (in each service directory)
-- Check PostgreSQL is running: `docker compose ps postgres`
-
-### Wallet Not Found
-**Symptom**: `ENOENT: no such file or directory, open './wallet.json'`
-
-**Solution**: Use **absolute path** in `.env`:
-```bash
-TURBO_JWK_FILE=/home/vilenarios/ar-io-bundler/wallet.json
-```
-
-### Service Communication Errors
-**Symptom**: Upload service can't reach payment service
-
-**Solution**:
-- `PAYMENT_SERVICE_BASE_URL=localhost:4001` (NO `http://` prefix)
-- `PRIVATE_ROUTE_SECRET` must match in both `.env` files
-- Both services must be running: `pm2 list`
-
-## Tips for Working in This Codebase
-
-1. **Start with service-specific CLAUDE.md files** - Each service has detailed guidance
-2. **Use the TodoWrite tool** for complex multi-step tasks
-3. **Run unit tests frequently** during development (`yarn test:unit`)
-4. **Check both databases** when debugging - payment_service and upload_service are separate
-5. **Monitor Bull Board** for job queue status: `http://localhost:3002/admin/queues`
-6. **Use PM2 logs** for debugging: `pm2 logs [service-name]`
-7. **Test with local infrastructure** - Docker Compose provides all dependencies
-8. **Follow migration patterns** - Never write raw SQL in generated migration files
-9. **Respect the architecture pattern** - Dependencies injected via Architecture object
-10. **Workers run in fork mode** - Do not cluster workers to avoid duplicate processing
-11. **Verify cron job is running** - Bundle planning requires cron trigger every 5 minutes
-12. **Check fee configuration** - Default fees subsidize uploads at a loss (see `FEE_CONFIGURATION_GUIDE.md`)
+- **README.md**: Administrator setup guide, vertical integration, troubleshooting
+- **CLAUDE.md**: Development guidance and architecture overview
+- **packages/*/CLAUDE.md**: Service-specific implementation details
+- **packages/payment-service/X402_IMPLEMENTATION.md**: x402 protocol details
